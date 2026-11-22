@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 472,
+  "number": 473,
   "version": "0.6.3",
-  "revision": 400,
+  "revision": 401,
   "notes": [
-    "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
+    "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
   ],
-  "preparedAt": "2026-11-22T23:49:01.938Z",
-  "committedAt": "2026-11-22T23:49:03.000Z"
+  "preparedAt": "2026-11-22T23:53:19.691Z",
+  "committedAt": "2026-11-22T23:53:21.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

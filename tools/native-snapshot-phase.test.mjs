@@ -11,13 +11,13 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
-import {prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
+import {eventSourceCompanionMatchesProjection,prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {ledgerBinding,ledgerKey,writeLedger,readLedger} from './native-verification-ledger.mjs';
 import {encryptCaptureRecovery} from './capture-recovery.mjs';
 const encryptNativeSnapshotRecovery=options=>encryptCaptureRecovery({attempt:'routine-capture',...options});
 import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verification.mjs';
 import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
-import {applyNativeLedgerToCapturedTracks} from './public-snapshot-backup.mjs';
+import {applyNativeLedgerToCapturedTracks,publicEventBackup} from './public-snapshot-backup.mjs';
 import {publishSnapshot} from './snapshot-package.mjs';
 import {hydrateStaging} from './update-public-snapshot.mjs';
 import {nativeEventSourceHash} from './native-event-snapshot.mjs';
@@ -36,6 +36,19 @@ function exactFunction(source,name){
  assert.ok(start>=0,name);const end=source.indexOf('\n}',start);assert.ok(end>start,name);
  return source.slice(start,end+2).replace(/^export /,'');
 }
+test('an existing pinned event source permits only display-name policy drift',()=>{
+ const id='d_20261122',period={id,kind:'daily',trackId:track,startsAt:1000,endsAt:5000};
+ const candidate=publicEventBackup({id,period,updatedAt:2500,entries:[],pendingPlaybacks:[{
+   accountId:account,runId,timeMs:900,submittedAt:1900,replayHash,name:'Valid Racer',carStyle:'',
+   pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'
+ }]},id);
+ assert.equal(candidate.pendingPlaybacks.length,1);
+ candidate.pendingPlaybacks[0].name='Lil nga';
+ const before=nativeEventSourceHash(candidate);
+ assert.equal(eventSourceCompanionMatchesProjection(candidate,id),true);
+ assert.equal(nativeEventSourceHash(candidate),before);
+ assert.equal(eventSourceCompanionMatchesProjection({...candidate,pendingPlaybacks:[{...candidate.pendingPlaybacks[0],privateField:true}]},id),false);
+});
 test('retained ledger lookup preserves strict wildcard presence, every disposition, and duplicate rejection',async()=>{
  const source=await fs.readFile(new URL('./native-snapshot-phase.mjs',import.meta.url),'utf8');
  const context=vm.createContext({Map,Set,demand:(ok,message)=>assert.ok(ok,message)});

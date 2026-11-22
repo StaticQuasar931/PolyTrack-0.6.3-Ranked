@@ -1,4 +1,5 @@
 import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
+import {publicDisplayName} from './public-display-name.mjs';
 import {pinRetainedNativeBoards} from './retained-native-board-cache.mjs';
 import {nativeTargetTrackIds} from './native-target-filter.mjs';
 import {assertPublishedTargetRetention,publishedNormalRetentionSelection,assertPublishedTargetJobs} from './published-target-retention.mjs';
@@ -28,6 +29,15 @@ import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-h
 const HASH=/^[a-f0-9]{64}$/,SHA=/^[a-f0-9]{40}$/;
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const demand=(value,message)=>{if(!value)throw Error('Native snapshot phase: '+message);};
+export function eventSourceCompanionMatchesProjection(board,id){
+  const projected=publicEventBackup(board,id);
+  if(isDeepStrictEqual(board,projected))return true;
+  if(!Array.isArray(board.pendingPlaybacks))return false;
+  // Preserve the original pinned object for proof pairing. Only the current
+  // display-name policy can differ when an old companion is projected again.
+  const pendingPlaybacks=board.pendingPlaybacks.map(row=>typeof row?.name==='string'?{...row,name:publicDisplayName(row.name)}:row);
+  return isDeepStrictEqual({...board,pendingPlaybacks},projected);
+}
 const read=async(directory,file)=>JSON.parse(await fs.readFile(path.join(directory,file),'utf8'));
 const optional=async(directory,file)=>{try{return await read(directory,file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};
 const rootFor=(root,name)=>path.join(root,'local-reports',name);
@@ -195,7 +205,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
     try{bytes=await fs.readFile(file);}catch(error){if(error.code==='ENOENT')continue;throw error;}
     demand(bytes.length<=2*1024*1024&&sha(bytes)===pin,'event source companion hash mismatch');
     const value=JSON.parse(bytes);demand(Object.keys(value).sort().join('|')==='board|schemaVersion'&&value.schemaVersion===1&&value.board?.id===id&&
-      !value.board.nativeEventOverlay&&isDeepStrictEqual(value.board,publicEventBackup(value.board,id)),'event source companion identity/schema');
+      !value.board.nativeEventOverlay&&eventSourceCompanionMatchesProjection(value.board,id),'event source companion identity/schema');
     eventSources.set(id,value.board);
   }
   // Only a previously compiled package supplies retained native admissions.
