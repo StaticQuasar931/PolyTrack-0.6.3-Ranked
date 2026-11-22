@@ -1566,33 +1566,26 @@ test('canonical callback runs once only after exact direct account regression an
   }
 });
 
-test('same-racer recording changes retain the old board without blocking event capture', async t => {
-  const {CanonicalRunChangedError} = await import('./canonical-retained-track.mjs');
-  for (const captured of [false, true]) {
-    const prior = coverageBoard(), incoming = nextCoverageBoard(prior, prior.entries.slice(1));
-    const f = await accountCoverageFixture(t, prior);
-    const result = await f.capture(incoming, {captured, capturedFetchLimit:1,
-      reconcileCanonicalTrack: () => {throw new CanonicalRunChangedError(trackId, ['upload','frames','replay','time']);}});
-    assert.equal(result.deferred, undefined);
-    assert.deepEqual(result.tracks[trackId], JSON.parse(f.before['manifest.json']).tracks[trackId]);
-    assert.equal(await fs.readFile(path.join(f.directory,f.relative),'utf8'), f.before[f.relative]);
-    assert.deepEqual(f.reports.at(-1).deferredCanonicalTracks, [trackId]);
-    assert.equal(result.canonicalTrackRetention.accounts, 0);
-  }
-});
-
-test('recording conflict omits an invalidated track without repackaging its old bytes', async t => {
-  const {CanonicalRunChangedError} = await import('./canonical-retained-track.mjs');
-  const prior = coverageBoard(), incoming = nextCoverageBoard(prior, prior.entries.slice(1));
+test('confirmed recording change omits exactly the changed account, not a required board', async t => {
+  const {createCanonicalRetainedTrack} = await import('./canonical-retained-track.mjs');
+  const prior = coverageBoard();
+  for (const row of prior.entries) row.trackId = trackId;
+  Object.assign(prior.entries[0],{uploadId:123,frames:1000,replayHash:'f'.repeat(64)});
+  const old = prior.entries[0];
+  Object.assign(old,{runVerified:true,verified:true,verifiedState:1,integrityVerified:true,
+    verificationStatus:'verified',nativeLedgerKey:'d'.repeat(64),nativeLedgerManifestHash:'e'.repeat(64)});
+  const incoming = nextCoverageBoard(prior, prior.entries.slice(1));
   const f = await accountCoverageFixture(t, prior);
-  const manifest = JSON.parse(f.before['manifest.json']);
-  manifest.tracks[trackId].nativeLedgerOverlay = {};
-  await fs.writeFile(path.join(f.directory,'manifest.json'), JSON.stringify(manifest));
-  const result = await f.capture(incoming, {reconcileCanonicalTrack:() => {throw new CanonicalRunChangedError(trackId,['replay']);}});
-  assert.deepEqual(result.deferredCanonicalTracks,[trackId]);
-  assert.equal(result.tracks[trackId].path,null);
-  assert.equal(result.tracks[trackId].retainedBoardMissing,true);
-  await assert.rejects(fs.access(path.join(f.directory,f.relative)),{code:'ENOENT'});
+  const retention = createCanonicalRetainedTrack({quarantineChanged:true,proofAllowed:()=>true,
+    readCanonical:async()=>({data:{...old,timeMs:old.timeMs+1}})});
+  const result = await f.capture(incoming, {reconcileCanonicalTrack:retention.reconcile});
+  assert.deepEqual(result.quarantinedCanonicalTracks,{[trackId]:1});
+  assert.equal(result.tracks[trackId].path,f.relative);
+  const board = JSON.parse(await fs.readFile(path.join(f.directory,f.relative),'utf8'));
+  assert.deepEqual(board.entries.map(row=>row.accountId),incoming.entries.map(row=>row.accountId));
+  assert.equal(board.complete,true);
+  assert.equal(result.canonicalTrackRetention.accounts,0);
+  assert.equal(retention.usedDocuments(),1);
 });
 
 test('canonical callback is not called for normal, incomplete, ambiguous or unsafe prior sources', async t => {

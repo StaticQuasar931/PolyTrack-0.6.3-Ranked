@@ -3,6 +3,9 @@ import {rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
 import {canonicalBindingSignature} from './reconcile-captured-canonical.mjs';
 import {hasPlayablePublicReplayStatus, validatePublicReplayForPublication} from './public-replay-playback.mjs';
 
+const quarantineResults = new WeakSet();
+export const hasCanonicalQuarantine = result => quarantineResults.has(result);
+
 const HASH = /^[a-f0-9]{64}$/;
 export class CanonicalRunChangedError extends Error {
   constructor(trackId, fields) {
@@ -35,7 +38,7 @@ function validateBoard(board, trackId) {
   return accounts;
 }
 
-export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32, manualRecovery = false} = {}) {
+export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32, manualRecovery = false, quarantineChanged = false} = {}) {
   demand(typeof readCanonical === 'function' && typeof proofAllowed === 'function' && typeof confirmProof === 'function', 'callbacks required');
   demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && typeof manualRecovery === 'boolean' && maxDocuments <= (manualRecovery ? 512 : 32), 'invalid document budget');
   let used = 0, reserved = 0;
@@ -59,7 +62,7 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
     // Reserve the whole batch synchronously, including against concurrent reconciliations.
     reserved += missing.length;
     let unread = missing.length;
-    const retained = [];
+    const retained = [], quarantined = [];
     try {
       for (const row of missing) {
         reserved--; unread--; used++;
@@ -76,7 +79,9 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
           const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
           if(source.timeMs!==row.timeMs)fields.push('time');
           if(fields.includes('account') || fields.includes('track')) throw Error('Canonical retained track: canonical document identity mismatch');
-          throw new CanonicalRunChangedError(trackId,fields);
+          if (!quarantineChanged) throw new CanonicalRunChangedError(trackId,fields);
+          quarantined.push(row.accountId);
+          continue;
         }
         demand(playable(source), 'canonical status held or unavailable');
         demand(typeof source.replay === 'string' &&
@@ -87,7 +92,8 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
         retained.push({accountId: row.accountId, trackId, uploadId: row.uploadId, replayHash: row.replayHash,
           canonicalUpdateTime: doc.updateTime || null});
       }
-      const entries = rankTrustedTrackEntries([...board.entries, ...missing], trackId);
+      const excluded = new Set(quarantined);
+      const entries = rankTrustedTrackEntries([...board.entries, ...missing.filter(row => !excluded.has(row.accountId))], trackId);
       const output = {...board, entries, complete: true, sourceComplete: true, totalEntriesExact: true,
         ranksExact: true, totalEntries: entries.length};
       if (Object.hasOwn(output, 'count')) output.count = entries.length;
@@ -95,7 +101,12 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
       delete output.pagination;
       delete output.paginatedSource;
       published.push(...structuredClone(retained));
-      return {board: output, retained, readDocuments: missing.length};
+      const result = {board: output, retained, readDocuments: missing.length};
+      if (quarantined.length) {
+        result.quarantined = Object.freeze(quarantined);
+        quarantineResults.add(result);
+      }
+      return result;
     } finally {
       reserved -= unread;
     }

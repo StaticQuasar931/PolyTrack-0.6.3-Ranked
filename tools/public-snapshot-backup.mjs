@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util';
 import {isFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
-import {CanonicalRunChangedError} from './canonical-retained-track.mjs';
+import {hasCanonicalQuarantine} from './canonical-retained-track.mjs';
 import {publishedFullCanonicalReadPoint,retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
@@ -932,7 +932,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const sourceRechecks = new Map();
   const olderCanonicalTracks = new Set();
   const canonicalRetentions = new Map();
-  const deferredCanonicalTracks = new Set();
+  const quarantinedCanonicalTracks = new Map();
   // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
   // This is local staging validation only; network responses retain their paged-source checks.
   const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
@@ -1054,27 +1054,26 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const prior = cachedProjection(JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8')), id);
       if (!hasCompleteTrackCoverage(prior)) throw error;
       const original = structuredClone(board);
-      let result;
-      try { result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)}); }
-      catch (conflict) {
-        // Never mix a changed recording with old proof or claim a fresh board.
-        // A routine capture can retain a reusable board, or omit an unsafe one.
-        const saved = previous.tracks[id];
-        if (!(conflict instanceof CanonicalRunChangedError) || conflict.trackId !== id ||
-            fullCanonicalSource || trackConfirmationNotBefore !== null) throw conflict;
-        const keep = cachedTracks[id]?.path === relative && Number.isSafeInteger(saved.checkedAt) && saved.checkedAt > 0;
-        cachedTracks[id] = keep ? saved : {path:null, missing:true, complete:false, sourceComplete:false, retainedBoardMissing:true};
-        deferredCanonicalTracks.add(id);
-        log(JSON.stringify({deferredCanonicalTrack:id, retainedPriorBoard:keep, reason:conflict.message}));
-        return {id, deferred:true, omit:!keep};
+      const result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)});
+      const quarantined = new Set();
+      if (result?.quarantined !== undefined) {
+        if (fullCanonicalSource || trackConfirmationNotBefore !== null || !hasCanonicalQuarantine(result) ||
+            !Array.isArray(result.quarantined) || !result.quarantined.length)
+          throw Error('Invalid canonical quarantine');
+        for (const account of result.quarantined) {
+          if (!TRACK_ID.test(account) || quarantined.has(account)) throw Error('Invalid canonical quarantine account');
+          quarantined.add(account);
+        }
       }
       const reconciled = authenticatedOverallTrackBackup(result?.board, id);
       if (reconciled.updatedAt < original.updatedAt ||
           reconciled.algorithmVersion === original.algorithmVersion &&
           Number(reconciled.revision || reconciled.sourceRevision || 0) < Number(original.revision || original.sourceRevision || 0))
         throw error;
-      await assertSavedTrackCoverage(reconciled, id);
-      assertTrackAccountCoverage(prior, reconciled, id);
+      if (!quarantined.size) await assertSavedTrackCoverage(reconciled, id);
+      else if (sourceRepairs.has(relative)) throw Error('Cannot quarantine over an authenticated source repair');
+      const keepRows = prior.entries.filter(row => !quarantined.has(row.accountId ?? row.userId));
+      assertTrackAccountCoverage({...prior, totalEntries:keepRows.length, entries:keepRows}, reconciled, id);
       assertTrackAccountCoverage(original, reconciled, id);
       if (!Array.isArray(result.retained) || !Number.isSafeInteger(result.readDocuments) || result.readDocuments < 0)
         throw Error('Invalid canonical track retention result');
@@ -1086,6 +1085,11 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const originalAccounts = new Set(original.entries.map(row => row.accountId ?? row.userId));
       const missing = new Set(prior.entries.map(row => row.accountId ?? row.userId).filter(account => !originalAccounts.has(account)));
       if(result.readDocuments!==missing.size)throw Error('Invalid canonical track retention: document count mismatch');
+      for (const account of quarantined) {
+        if (!missing.delete(account) || reconciled.entries.some(row => (row.accountId ?? row.userId) === account))
+          throw Error('Invalid canonical quarantine coverage');
+      }
+      if (quarantined.size) quarantinedCanonicalTracks.set(id,quarantined.size);
       const retained = result.retained.map(value => {
         const evidence = project(value, ['accountId', 'trackId', 'uploadId', 'replayHash', 'canonicalUpdateTime']);
         const row = reconciled.entries.find(row => (row.accountId ?? row.userId) === evidence.accountId);
@@ -1220,8 +1224,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const pendingWrites = new Map([['overall.json', overall], ...promotedReplays, ...sourceRepairs]);
   let missingTracks = 0, missingEvents = 0;
   const trackSummaryMismatches = [];
-  for (const {id, value, deferred, omit} of trackRows) {
-    if (deferred) { if (omit) missingTracks++; continue; }
+  for (const {id, value} of trackRows) {
     if (!value) {
       missingTracks++;
       // A failed fetch must not freshen a retained board or resurrect an invalid path.
@@ -1331,11 +1334,6 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     try { await fs.unlink(path.join(directory, 'overall-results.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 
-  // The packager scans staging files, so an omitted board must not remain there.
-  // This does not touch the previous generation or its canonical recording files.
-  for (const {id, omit} of trackRows) if (omit) {
-    await fs.unlink(path.join(directory,'tracks',id+'.json')).catch(error => {if(error.code !== 'ENOENT') throw error;});
-  }
   const replayPaths = new Set(Object.keys(eventReplays));
   for (const record of Object.values(previous.eventPlaybacks || {})) {
     if (typeof record?.path === 'string' && /^event-playbacks\/[A-Za-z0-9_-]{1,64}\/[a-f0-9]{64}\.json$/.test(record.path) && !Object.hasOwn(eventPlaybacks,record.path)) {
@@ -1358,7 +1356,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
     pendingPlaybackCoverage, replayCoverage,
-    trackSummaryMismatches, canonicalTrackRetention, deferredCanonicalTracks:[...deferredCanonicalTracks].sort(),
+    trackSummaryMismatches, canonicalTrackRetention, quarantinedCanonicalTracks:Object.fromEntries([...quarantinedCanonicalTracks].sort()),
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null,
     ...(previous.nativeVerificationLedger ? {nativeVerificationLedger:previous.nativeVerificationLedger} : {})};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
@@ -1368,7 +1366,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,olderCanonicalTracksPreserved:olderCanonicalTracks.size, deferredCanonicalTracks:[...deferredCanonicalTracks].sort(),
+    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,olderCanonicalTracksPreserved:olderCanonicalTracks.size, quarantinedCanonicalTracks:Object.fromEntries([...quarantinedCanonicalTracks].sort()),
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

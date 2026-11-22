@@ -260,3 +260,15 @@ test('synchronous callback errors and proof errors propagate without retries', a
     assert.equal(calls, 1); assert.equal(helper.usedDocuments(), stage === 'read' ? 1 : 0);
   }
 });
+
+test('routine quarantine charges the changed binding and keeps the unaffected results', async () => {
+  const {hasCanonicalQuarantine} = await import('./canonical-retained-track.mjs');
+  const f = fixture({quarantineChanged:true});
+  f.doc.data.timeMs++;
+  const result = await f.run();
+  assert.equal(hasCanonicalQuarantine(result),true);
+  assert.deepEqual(result.quarantined,[accountId]);
+  assert.equal(result.readDocuments,1);
+  assert.deepEqual(result.retained,[]);
+  assert.deepEqual(result.board.entries,rankTrustedTrackEntries([current],trackId));
+});
