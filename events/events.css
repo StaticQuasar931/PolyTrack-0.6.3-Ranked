@@ -1386,7 +1386,8 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 
 .sq-event-board button.main .verified-state{white-space:normal!important;flex-wrap:wrap;height:auto;line-height:1.25!important;padding:2px 5px;max-width:calc(100% - 24px)}
 .sq-event-board .sq-event-earned-rp,.sq-event-board .sq-event-estimated-rp{display:inline-block;max-width:100%;white-space:normal;overflow-wrap:normal;font-variant-numeric:tabular-nums}
 .sq-event-board .sq-event-earned-rp{color:#b4f3ca}
-.sq-event-board .sq-event-estimated-rp{color:#ffe0a6}
+.sq-event-board .sq-event-estimated-rp,.sq-event-placement-estimate{color:#ffe0a6}
+.sq-event-board .sq-event-estimated-rp{white-space:nowrap}
 .sq-event-verified-results li{grid-template-columns:22px 52px minmax(100px,1fr) auto auto}
 .sq-event-verified-results li img{width:20px;height:20px}
 @media(max-width:650px){.sq-event-verified-results li{grid-template-columns:20px 36px minmax(0,1fr);gap:7px}.sq-event-verified-results li time{grid-column:2/4}.sq-event-verified-results li>strong{grid-column:2/4;text-align:left}.sq-event-totals-results li{grid-template-columns:38px minmax(0,1fr)}.sq-event-totals-results li>strong,.sq-event-totals-results li>span:last-of-type{grid-column:2}}

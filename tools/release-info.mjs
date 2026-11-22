@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 452,
+  "number": 454,
   "version": "0.6.3",
-  "revision": 385,
+  "revision": 387,
   "notes": [
-    "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
-    "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
-    "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
+    "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
   ],
-  "preparedAt": "2026-11-22T04:42:24.857Z",
-  "committedAt": "2026-11-22T04:43:38.000Z"
+  "preparedAt": "2026-11-22T19:51:08.242Z",
+  "committedAt": "2026-11-22T19:51:59.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

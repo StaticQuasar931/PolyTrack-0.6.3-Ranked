@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=385';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=385';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=387';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=387';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=385';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=385';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=385';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=387';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=387';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=387';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -564,7 +564,7 @@ export function eventOwnPlacementPresentation(place){
   if(!presentation)return null;
   const size=place.fieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
   const title=(known?`Event place #${place.rank} of ${size} racers.`:presentation.title)+(place.provisional?' Provisional placement.':'');
-  return {...presentation,text:place.rank+'/'+(known?size:'?')+(place.provisional?' (provisional)':''),
+  return {...presentation,text:place.rank+'/'+(known?size:'?'),
     className:presentation.className+' sq-record-placement'+(place.provisional?' estimated':''),title,ariaLabel:title};
 }
 export function eventSidebarPlacementPresentation(place){
@@ -573,7 +573,7 @@ export function eventSidebarPlacementPresentation(place){
   const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
   const value=known?Math.max(.0001,place.rank/size*100):null;
   const percentile=value===null?null:String(Number(value.toFixed(value<10?4:value<100?3:2)));
-  const ordinal=eventOrdinal(place.rank)+(place.provisional?' (provisional)':'');
+  const ordinal=eventOrdinal(place.rank);
   const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:eventPlacementPresentation(place).title;
   return {...presentation,title,ariaLabel:title,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
 }
@@ -584,6 +584,7 @@ export function renderEventPersonalBest(host,{timeText,placement,pending=false,l
   clock.src='images/timer.svg';time.textContent=timeText;if(!hasRecord)time.className='faded';timer.append(clock,time);
   const result=doc.createElement('div'),trophy=doc.createElement('img');trophy.src='images/trophy.svg';result.append(trophy);
   if(placement){
+    if(placement.className?.split(' ').includes('estimated'))result.classList.add('sq-event-placement-estimate');
     result.title=placement.title+(local?' Saved on this device; not submitted or verified.':'');result.setAttribute('aria-label',placement.text+'. '+result.title);
     result.append(doc.createTextNode(placement.ordinal));
     if(placement.percentile!==null){const percent=doc.createElement('span');percent.className='faded';percent.textContent=' ('+placement.percentile+'%)';result.append(percent);}
@@ -687,7 +688,7 @@ export function eventRunErpPresentation(row,board,period=board?.period,at=Date.n
     !['local-event-recording','submitted-event-recording','pending-event-playback'].includes(row.source))return pending;
   const rp=period.scoringVersion==='time-ratio-v1'?Math.min(period.maxRp,Number(BigInt(period.maxRp)*BigInt(period.targetMs)/BigInt(row.timeMs))):
     Math.max(1,Math.min(period.maxRp,Math.round(period.maxRp/(1+Math.exp(8*(row.timeMs/period.targetMs-1)-Math.log(4))))));
-  return {status:'estimated',text:'Estimated '+rp.toLocaleString('en-US')+' ERP if verified',estimated:true,
+  return {status:'estimated',text:'~'+rp.toLocaleString('en-US')+' ERP',estimated:true,
     title:'Would earn approximately '+rp.toLocaleString('en-US')+' ERP under the saved '+period.scoringVersion+' time curve if admitted and verified in this exact period. No ERP is awarded yet; this is not a placement-based award.'};
 }
 export function decorateEventErpBadge(button,row,board,period,at=Date.now()){
@@ -695,6 +696,7 @@ export function decorateEventErpBadge(button,row,board,period,at=Date.now()){
   const presentation=eventRunErpPresentation(row,board,period,at);
   state.dataset.sqEventErpStatus=presentation.status;
   const title=eventVerificationLabel(row,!eventRowVerified(row))+'. '+presentation.title;
+  const statusLabel=state.querySelector('.sq-event-status-label');if(statusLabel)statusLabel.hidden=true;
   state.title=title;state.setAttribute('aria-label',title);
   const icon=state.querySelector('img');if(icon)icon.title=title;
   {

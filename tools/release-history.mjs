@@ -2,16 +2,35 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 452,
+    "number": 454,
     "version": "0.6.3",
-    "revision": 385,
+    "revision": 387,
     "notes": [
-      "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
-      "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
-      "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
+      "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
     ]
   },
   "entries": [
+    {
+      "number": 453,
+      "title": "Compact event estimates and add Workshop sticker placements",
+      "commit": "457607d815d59b9b6356b1260ae3d4e7397d5b46",
+      "committedAt": "2026-11-22T19:44:09.000Z",
+      "notes": [
+        "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
+        "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
+      ]
+    },
+    {
+      "number": 452,
+      "title": "Add verified Owner Challenge targets and rewards",
+      "commit": "4663f7ab8b75e33626a604a1411925323c831ed7",
+      "committedAt": "2026-11-22T04:43:38.000Z",
+      "notes": [
+        "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
+        "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
+        "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
+      ]
+    },
     {
       "number": 451,
       "title": "Add Total RP plates and six Workshop styles",
@@ -184,26 +203,6 @@ const historyData = {
       "committedAt": "2026-11-16T09:30:50.000Z",
       "notes": [
         "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
-      ]
-    },
-    {
-      "number": 427,
-      "title": "Simplify event points and verification tooltips",
-      "commit": "3815ee4738be55222aa0212ce3b19efb21b92ebd",
-      "committedAt": "2026-11-16T08:41:09.000Z",
-      "notes": [
-        "Simplified event verification tooltips: run date, verification status and ERP earned.",
-        "Kept unverified ERP estimates clearly separate from awarded points."
-      ]
-    },
-    {
-      "number": 426,
-      "title": "Align weekly details and keep Rolling Hills points in tooltips",
-      "commit": "e8762bf6bb027f14566cf147dfc3a96265030aca",
-      "committedAt": "2026-11-16T08:27:34.000Z",
-      "notes": [
-        "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
-        "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
       ]
     }
   ],

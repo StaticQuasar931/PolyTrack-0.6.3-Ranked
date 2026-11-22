@@ -103,7 +103,14 @@ export function carAttachmentFrames(positions,indices){
  const roof=centerline(f=>f.normal[1]>.65&&f.center[1]>=min[1]+(max[1]-min[1])*.55);if(!roof)throw Error('No centered native roof surface');
  const hood=centerline(f=>f.normal[1]>.65&&f.center[2]>(min[2]+max[2])/2+(max[2]-min[2])*.12);
  const rearFaces=faces.filter(f=>f.normal[2]<-.7&&f.center[1]>min[1]+(max[1]-min[1])*.4);let rear=null;if(rearFaces.length){const f=rearFaces.sort((a,b)=>a.center[2]-b.center[2])[0];rear={point:[centerX,f.center[1],f.center[2]],normal:[...f.normal],width:Math.max(...f.p.map(p=>p[0]))-Math.min(...f.p.map(p=>p[0]))};}
- const decalFrames={};for(const [id,axis,sign] of [['left',0,-1],['right',0,1],['front',2,1],['rear',2,-1],['under',1,-1]]){
+ const midZ=(min[2]+max[2])/2,lengthZ=max[2]-min[2];
+ const upper=f=>f.normal[1]>.80&&Math.abs(f.normal[0])<.15;
+ const decalFrames={};
+ for(const [id,surface] of [
+  ['mid-body',centerline(f=>upper(f)&&f.center[2]>roof.point[2]+lengthZ*.05&&f.center[2]<midZ+lengthZ*.12)],
+  ['rear-deck',centerline(f=>upper(f)&&f.center[2]<roof.point[2]-lengthZ*.09&&f.center[1]<roof.point[1]-.04)]
+ ])if(surface&&surface.width>.05&&surface.depth>.05)decalFrames[id]=surface;
+ for(const [id,axis,sign] of [['left',0,-1],['right',0,1],['front',2,1],['rear',2,-1],['under',1,-1]]){
   const matching=faces.filter(f=>f.normal[axis]*sign>.8).sort((a,b)=>b.area-a.area);if(!matching.length)continue;
   const mid=(min[1]+max[1])/2;const tip=id==='front'?faces.filter(f=>f.normal[1]>.62&&f.center[2]>max[2]-(max[2]-min[2])*.19).sort((a,b)=>b.center[2]-a.center[2])[0]:null;
   const tail=id==='rear'?matching.filter(f=>f.center[1]>mid-.15).sort((a,b)=>b.center[1]-a.center[1])[0]:null;

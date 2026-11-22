@@ -44,7 +44,7 @@ export function createWorkshopView(cap){
  function focus(category){
   const {renderer,chassis}=cap;if(typeof renderer.setCamera!=='function'||!renderer.camera||typeof chassis.localToWorld!=='function')return;
   if(renderer.camera!==preview){if(typeof renderer.camera.clone!=='function')return;original=renderer.camera;preview=original.clone();}
-  const angles={finish:[2.8,1.9,3.4],emblem:[1.4,1.9,3.8],sticker:[.4,3.7,3],accessory:[2,2.7,1.4],front:[1.3,1.45,3.9],rear:[1.4,1.4,-3.65],left:[-4,.8,.25],right:[4,.8,.25],under:[.42,-4.2,1.05]};
+  const angles={finish:[2.8,1.9,3.4],emblem:[1.4,1.9,3.8],sticker:[.4,3.7,3],accessory:[2,2.7,1.4],front:[1.3,1.45,3.9],rear:[1.4,1.4,-3.65],left:[-4,.8,.25],right:[4,.8,.25],under:[.42,-4.2,1.05],'mid-body':[.45,3.8,2.15],'rear-deck':[.65,3.4,-2.8]};
   offset=angles[category];below=category==='under';if(!offset)return;
   renderer.setCamera(preview);framePortrait();
  }
