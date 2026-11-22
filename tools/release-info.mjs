@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 444,
+  "number": 445,
   "version": "0.6.3",
-  "revision": 377,
+  "revision": 378,
   "notes": [
-    "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
-    "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
+    "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
+    "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
   ],
-  "preparedAt": "2026-11-22T01:07:50.024Z",
-  "committedAt": "2026-11-22T01:10:38.000Z"
+  "preparedAt": "2026-11-22T01:40:45.647Z",
+  "committedAt": "2026-11-22T01:40:47.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

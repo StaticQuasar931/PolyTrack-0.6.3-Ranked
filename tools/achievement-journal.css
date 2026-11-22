@@ -409,3 +409,10 @@ dialog.profile-hub .ph-tabbar>[data-ph-shop] svg{width:24px;height:24px;color:#7
 dialog.profile-hub .ph-tabbar>[data-ph-shop]:hover{background:#263d70;color:#fff}
 dialog.profile-hub .ph-tabbar>[data-ph-shop]:disabled{opacity:.6;cursor:wait}
 @media(max-width:660px){dialog.profile-hub .ph-tabbar>[data-ph-shop]{flex:1;min-width:0;min-height:50px;padding:10px 12px;font-size:19px;gap:6px}}
+
+/* Keep the goal and progress dominant; rewards use a quieter, separate line. */
+.aj.aj .aj-node-reward { margin-top:auto;padding-top:9px;border-top:1px solid #5877a1; }
+.aj.aj .aj-node-reward [data-aj-reward-icon] { width:20px;height:20px;color:#ffda83; }
+.aj.aj .aj-goal-count { font-variant-numeric:tabular-nums; }
+.aj.aj .aj-branch .aj-tier-list>li>button[aria-pressed=true] { border-left-color:#b9e9f7; }
+@media(max-width:480px){.aj.aj .aj-branch .aj-tier-list>li>button{gap:8px;padding:12px}.aj.aj .aj-branch .aj-tier-list>li>button>strong{font-size:21px}}

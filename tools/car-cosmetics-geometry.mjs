@@ -10,6 +10,8 @@ const box=(w,h,d,x=0,y=h/2,z=0)=>convex([[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]
 function cylinder(radius,height,y,segments){const p=[],f=[];for(const h of [y,y+height])for(let i=0;i<segments;i++)p.push([Math.cos(i/segments*Math.PI*2)*radius,h,Math.sin(i/segments*Math.PI*2)*radius]);p.push([0,y,0],[0,y+height,0]);for(let i=0;i<segments;i++){const n=(i+1)%segments;f.push([segments*2,i,n],[segments*2+1,n+segments,i+segments],[i,i+segments,n+segments],[i,n+segments,n]);}return convex(p,f);}
 const part=(positions,color,emissive=0,decal=false)=>Object.freeze({positions,color,emissive,decal,triangles:positions.length/9});
 const stickerShapes={
+ 'double-apex':[[0x133147,[[3,23],[10,8],[15,8],[8,23]]],[0x6af3d7,[[10,23],[17,8],[22,8],[15,23]]],[0xdafff9,[[18,23],[25,8],[29,8],[22,23]]]],
+ 'pit-stripe':[[0x192c45,[[4,8],[28,8],[28,24],[4,24]]],[0xf0b44f,[[5,19],[11,9],[15,9],[9,23],[5,23]]],[0xf9df9e,[[13,23],[19,9],[23,9],[17,23]]],[0xf0b44f,[[21,23],[27,9],[27,15],[24,23]]]],
  'pit-arrow':[[0x10253b,[[4,12],[16,12],[16,6],[29,16],[16,26],[16,20],[4,20]]],[0xf5a94a,[[7,14],[19,14],[19,11],[25,16],[19,21],[19,18],[7,18]]]],
  'night-grid':[[0x152744,[[5,5],[27,5],[27,27],[5,27]]],[0x7df1da,[[9,9],[15,9],[15,15],[9,15]]],[0xe9f9ff,[[17,9],[23,9],[23,15],[17,15]]],[0xe9f9ff,[[9,17],[15,17],[15,23],[9,23]]],[0x7df1da,[[17,17],[23,17],[23,23],[17,23]]]],
  apex:[[0xe0f7ff,[[5,25],[12,7],[17,7],[10,25]]],[0x31d5ec,[[14,25],[21,7],[26,7],[19,25]]]],

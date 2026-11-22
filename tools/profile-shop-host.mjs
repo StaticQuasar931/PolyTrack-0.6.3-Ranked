@@ -1,5 +1,6 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
 import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
+import {createProfileShopBalanceCache} from './profile-shop-balance-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
 import {createShopControllerStore,createShopController} from './shop-controller.mjs';
 const {mountProfileShopUi:mountShopPreview}=await import(new URL('./profile-shop-ui.mjs'+new URL(import.meta.url).search,import.meta.url).href);
@@ -45,12 +46,13 @@ async function loginMetadata(response){
 /** Host integration, default OFF. No SDK initialization or automatic wallet read.
  * achievementClaimsEnabled defaults false until the parent enables the server phase.
  * getAuth returns the already initialized Firebase auth object. Only an explicit
- * Shop open or refresh invokes transport; tokens remain request-local.
- * prepareAuth is awaited only on explicit open, before any store load. It may
+ * wallet sync or a transaction invokes transport; tokens remain request-local.
+ * prepareAuth is awaited only on explicit wallet sync, before any store load. It may
  * restore the existing auth SDK, but must not create profiles or contact a database.
  * noteAccountTransition MUST precede all active-account writes, including A-B-A.
  * observeAuth MUST also be called whenever the host initializes/replaces auth.
  * bind accepts optional getPreviewIdentity:()=>({accountId,name}) from the parent.
+ * bind accepts optional openAchievements:()=>true to open and focus Achievements.
  * Rendering still uses getPreviewController/openStudio and the existing Studio DOM.
  * content.__profileShopOpen / __profileShopClose are guarded root-local hooks.
  * __profileShopRefreshPreview refreshes existing renderer output after a frame/identity
@@ -61,6 +63,8 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   if(prepareAuth!==undefined&&typeof prepareAuth!=='function')throw TypeError('prepareAuth must be a function');
   let disposed=false,auth=null,unsubscribe=null,ownedUnsubscribe=null,authEpoch=0,lastAccount=getAccountId(),store=null;
   const ownedCache=createProfileShopOwnedCache(storage);
+  const balanceCache=createProfileShopBalanceCache(storage);
+  const online=()=>document.defaultView.navigator.onLine!==false;
   let loginMarker=null;
   const monotonic=()=>document.defaultView.performance.now();
   const loginClaimed=()=>!!(loginMarker&&loginMarker.accountId===getAccountId()&&loginMarker.uid===user()?.uid&&loginMarker.epoch===authEpoch&&monotonic()>=loginMarker.at&&monotonic()-loginMarker.at<loginMarker.remaining);
@@ -106,10 +110,12 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     }
     return response;
   },revision:Number(revision),getToken:async({signal})=>{
+    if(!online())throw Error('offline');
     assertOnline();observeAuth(currentAuth());const current=user(),account=getAccountId(),epoch=authEpoch;
     if(!enabled||!current||signal.aborted)throw Error('shop_authentication_required');
     const token=await current.getIdToken();
     if(disposed||signal.aborted||epoch!==authEpoch||current!==user()||account!==getAccountId())throw Error('shop_auth_context_changed');
+    if(!online())throw Error('offline');
     return token;
   }});
   function sharedStore(){
@@ -119,6 +125,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       ownedUnsubscribe=store.subscribe(state=>{
         const ownerUid=user()?.uid,id=getAccountId(),wallet=state.wallet,inventory=state.inventory;
         if(!ownerUid||state.accountId!==id||state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION||wallet?.accountId!==id||wallet.inventoryComplete!==true||inventory?.accountId!==id||inventory.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION)return;
+        if(state.phase==='ready'&&!state.loading)balanceCache.remember({accountId:id,ownerUid,balance:wallet.balance,revision:wallet.revision});
         const before=ownedCache.read(id,ownerUid);
         ownedCache.remember({accountId:id,ownerUid,catalogVersion:inventory.catalogVersion,revision:wallet.revision,ownedItemIds:inventory.ownedItemIds,complete:true});
         if(JSON.stringify(before?.ownedItemIds)!==JSON.stringify(inventory.ownedItemIds))notifyOwned('confirmed');
@@ -130,13 +137,14 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       const css=new URL('./profile-shop-ui.css',import.meta.url);css.searchParams.set('v',String(revision));
       if(![...document.querySelectorAll('link[data-profile-shop-css]')].some(link=>link.href===css.href)){const link=document.createElement('link');link.rel='stylesheet';link.href=css.href;link.dataset.profileShopCss='';document.head.append(link);}
   }
-  function bind(content,{accountId,isSelf,openStudio,getPreviewController,applyDraft,onOwnedUiChange,getPreviewIdentity}={}){
+  function bind(content,{accountId,isSelf,openStudio,openAchievements,getPreviewController,applyDraft,onOwnedUiChange,getPreviewIdentity}={}){
     if(disposed||!content?.isConnected||isSelf!==true||accountId!==getAccountId()||!/^[a-f0-9]{64}$/.test(accountId||''))return ()=>{};
     const studio=content.querySelector('.profile-customizer');if(!studio)return ()=>{};ensureStyle();
     const controls=studio.querySelector('.profile-customizer-controls')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorFrame=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorTimer=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
+    let returnTab='studio',previewedItem=null,stopConnectionWatch=null,syncing=false,updateSync=null,canvasPairs=[];
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
     const goStudio=reward=>{if(!current())return false;dialog?.close();return openStudio?.(reward)===true;};
@@ -149,22 +157,20 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       return studio.querySelector('.profile-preview-stage>span>b')?.textContent?.trim().slice(0,80)||'';
     };
     function watchRenderer(){
-      if(mirrorFrame||!current()||!dialog?.open)return;
-      let last=0;
-      const tick=now=>{
-        mirrorFrame=0;if(!current()||!dialog?.open)return;
-        if(now-last>=100){
-          last=now;
-          if(dialog.querySelector('.sp-live-preview>header>strong')?.textContent!==(racerName()||'Profile preview'))syncMirror();
-          const originals=studio.querySelectorAll('.profile-preview-stage canvas');
-          for(const [index,canvas] of [...dialog.querySelectorAll('[data-sp-live-stage] canvas')].entries()){
-            const source=originals[index];if(!source?.width||!source.height)continue;
-            try{canvas.getContext('2d')?.drawImage(source,0,0,canvas.width,canvas.height);}catch{}
-          }
+      const win=document.defaultView;
+      if(document.hidden||!current()||!dialog?.open||!canvasPairs.length){
+        if(mirrorTimer)win.clearInterval(mirrorTimer);mirrorTimer=0;return;
+      }
+      if(mirrorTimer)return;
+      // Canvas draws do not mutate the DOM. Poll only when there are real pixels to mirror.
+      mirrorTimer=win.setInterval(()=>{
+        if(document.hidden||!current()||!dialog?.open){watchRenderer();return;}
+        if(dialog.querySelector('.sp-live-preview>header>strong')?.textContent!==(racerName()||'Profile preview'))syncMirror();
+        for(const [source,canvas,context] of canvasPairs){
+          if(!source.isConnected||!source.width||!source.height)continue;
+          try{context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(source,0,0,canvas.width,canvas.height);}catch{}
         }
-        mirrorFrame=document.defaultView.requestAnimationFrame(tick);
-      };
-      mirrorFrame=document.defaultView.requestAnimationFrame(tick);
+      },100);
     }
     function renderCosmeticPreview(request){
       if(!current()||request?.accountId!==accountId)return null;
@@ -194,11 +200,14 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       if(!target)return;
       const heading=dialog.querySelector('.sp-live-preview>header>strong');if(heading)heading.textContent=racerName()||'Profile preview';
 
-      const locked=getPreviewController?.()?.isActive?.()===true;
-      dialog.querySelector('[data-sp-live-note]').textContent=locked?'Preview only. Not applied or unlocked.':'Your current racer. Try a style to preview it here.';
-      dialog.querySelector('[data-sp-live-clear]').hidden=!locked;
-      if(!source){target.textContent='Open Racer Studio to load your preview.';return;}
-      if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';return;}
+      const active=getPreviewController?.()?.isActive?.()===true;
+      const label=active?previewedItem?.label:null;
+      dialog.querySelector('[data-sp-live-mode]').textContent=label?'STYLE PREVIEW':active?'STUDIO PREVIEW':'CURRENT DESIGN';
+      dialog.querySelector('[data-sp-live-note]').textContent=label?'Preview only: '+label+'. Not applied or purchased here.':active?'Studio preview. Not applied.':'Try a style to see it on your racer.';
+      dialog.querySelector('[data-sp-live-clear]').hidden=!label;
+      canvasPairs=[];
+      if(!source){target.textContent='Open Racer Studio to load your preview.';watchRenderer();return;}
+      if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';watchRenderer();return;}
       const copy=source.cloneNode(true);
       // cloneNode does not copy rendered pixels; reuse only the real renderer output.
       const sourceCanvases=source.querySelectorAll('canvas');
@@ -206,7 +215,8 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         try{
           const original=sourceCanvases[index],context=canvas.getContext('2d');
           if(!original?.width||!original.height||!context)throw Error('Renderer unavailable');
-          context.drawImage(original,0,0);
+          if(!document.hidden)context.drawImage(original,0,0);
+          canvasPairs.push([original,canvas,context]);
         }catch{const note=document.createElement('span');note.textContent='Renderer preview unavailable.';note.dataset.spRendererUnavailable='';canvas.replaceWith(note);}
       }
       for(const [selector,kind,label] of [['.overall-car-model','stage','Edit car backdrop'],['[data-studio-preview-part="nameFont"]','nameFont','Edit name typography']]){
@@ -231,22 +241,41 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
 
         const card=content.closest('.overall-profile-card');if(card)mirrorObserver.observe(card,{attributes:true,attributeFilter:['class','style']});
       }
+      watchRenderer();
     }
     const keepShopPreview=reward=>{if(!current()||openStudio?.(reward)!==true)return false;syncMirror();return true;};
     function close(invalidate=false,authReset=false){
       publicViewGeneration++;if(!authReset)closeGeneration++;
-      document.defaultView.cancelAnimationFrame(mirrorFrame);mirrorFrame=0;
+      stopConnectionWatch?.();stopConnectionWatch=null;updateSync=null;
+      document.defaultView.clearInterval(mirrorTimer);mirrorTimer=0;canvasPairs=[];
       mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;mirrorRoot=null;mirrorRow=null;
-      preview?.dispose();preview=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
+      preview?.dispose();preview=null;previewedItem=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
+    }
+    function returnTo(tab=returnTab,restoreFocus=true){
+      const originalFocus=focus;
+      close();
+      if(!current())return;
+      const opened=tab==='studio'&&typeof openStudio==='function'?openStudio():
+        tab==='achievements'&&typeof openAchievements==='function'?openAchievements():content.__profileHubOpen?.(tab);
+      if(opened!==true)return;
+      const hub=content.querySelector('dialog.profile-hub[open]');
+      if(restoreFocus&&tab===returnTab&&hub?.contains(originalFocus)&&originalFocus.getClientRects().length)originalFocus.focus({preventScroll:true});
     }
     function createDialog(){
       ensureStyle();
       dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Style shop');
-      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><div class="sp-host-actions"><button type="button" data-shop-wallet-sync>Sync wallet</button><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></div></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
+      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><div class="sp-host-actions"><button type="button" data-shop-wallet-sync>Sync wallet</button><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></div><nav class="sp-host-back" aria-label="Return to Racer Hub"><button type="button" data-shop-back="studio">Back to Studio</button><button type="button" data-shop-back="achievements">Back to Achievements</button></nav></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
+      const back=dialog.querySelector('.sp-host-back');
+      for(const button of back.querySelectorAll('button')){
+        const tab=button.dataset.shopBack,callback=tab==='studio'?openStudio:openAchievements;
+        button.hidden=typeof callback!=='function'&&typeof content.__profileHubOpen!=='function';
+        button.onclick=()=>returnTo(tab,false);
+      }
+      back.hidden=[...back.children].every(button=>button.hidden);
       const grid=document.createElement('div');grid.className='sp-live-layout';
       const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
-      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><div class="sp-live-actions"><button type="button" data-sp-live-clear hidden>Exit preview</button></div>';
+      live.innerHTML='<header><strong>Your racer</strong><span data-sp-live-mode>CURRENT DESIGN</span></header><div class="sp-live-actions"><p data-sp-live-note role="status"></p><button type="button" data-sp-live-clear hidden>Exit preview</button></div><div data-sp-live-stage></div>';
       const body=dialog.querySelector('.sp-host-body');body.before(grid);grid.append(live,body);
       mirrorObserver=new document.defaultView.MutationObserver(()=>{if(mirrorQueued)return;mirrorQueued=true;queueMicrotask(()=>{mirrorQueued=false;syncMirror();});});
       const navigate=event=>{
@@ -258,28 +287,41 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       };
       live.addEventListener('click',navigate);live.addEventListener('keydown',navigate);
       live.querySelector('[data-sp-live-clear]').addEventListener('click',()=>{if(clearUiPreview)clearUiPreview();else preview?.clear();syncMirror();});
-      content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
-      dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close();}},true);
-      dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+      content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>returnTo());
+      const opened=dialog;
+      dialog.addEventListener('close',()=>{if(dialog===opened&&!opened.open)close(true);});
+      dialog.addEventListener('keydown',event=>{
+        if(event.key!=='Escape')return;
+        event.preventDefault();event.stopImmediatePropagation();
+        const cancel=dialog.querySelector('[data-sp-action="cancel"]');
+        if(cancel)cancel.click();else returnTo();
+      },true);
+      dialog.addEventListener('cancel',event=>{event.preventDefault();returnTo();});
       const notice=dialog.querySelector('.sp-host-gate');
       notice.textContent=!enabled?'Profile shop is not enabled yet. Purchases and claims are unavailable.':!user()?'Browse and preview without connecting. Sync wallet to check purchases and eligible rewards.':'';
       notice.hidden=!notice.textContent;
       const sync=dialog.querySelector('[data-shop-wallet-sync]');sync.hidden=!enabled;
+      const connectionChanged=()=>{sync.disabled=syncing||!online();};updateSync=connectionChanged;
+      const visibilityChanged=()=>{if(document.hidden)watchRenderer();else syncMirror();};
+      const win=document.defaultView;
+      win.addEventListener('online',connectionChanged);win.addEventListener('offline',connectionChanged);connectionChanged();
+      document.addEventListener('visibilitychange',visibilityChanged);
+      stopConnectionWatch=()=>{win.removeEventListener('online',connectionChanged);win.removeEventListener('offline',connectionChanged);document.removeEventListener('visibilitychange',visibilityChanged);};
       sync.onclick=async()=>{
-        let origin=dialog;const generation=closeGeneration;sync.disabled=true;
+        if(!online()||syncing)return;
+        let origin=dialog;const generation=closeGeneration;syncing=true;sync.disabled=true;
         const ticket={auth:currentAuth(),uid:user()?.uid||null,invalid:false};restorations.add(ticket);
         try{
-          if(document.defaultView.navigator.onLine===false)throw Error('offline');
           if(!user()&&typeof prepareAuth==='function')await prepareAuth();
           if(!current()||closeGeneration!==generation||!acceptRestoration(ticket,currentAuth(),user()))return;
           observeAuth(currentAuth());
           if(!user())throw Error('wallet_unavailable');
-          if(!dialog&&closeGeneration===generation)await performOpen();
+          if(!dialog&&closeGeneration===generation)await performOpen(true);
           if(!current()||!dialog||closeGeneration!==generation)return;
-          origin=dialog;const activeSync=origin.querySelector('[data-shop-wallet-sync]');activeSync.disabled=true;
+          origin=dialog;origin.querySelector('[data-shop-wallet-sync]').disabled=true;
           await view.open();if(dialog===origin)origin.querySelector('.sp-host-gate').hidden=true;
         }catch{if(dialog===origin){const feedback=origin.querySelector('.sp-host-gate');feedback.hidden=false;feedback.textContent='Wallet unavailable. You can still browse and preview.';}}
-        finally{restorations.delete(ticket);if(dialog===origin)origin.querySelector('[data-shop-wallet-sync]').disabled=false;}
+        finally{restorations.delete(ticket);syncing=false;updateSync?.();}
       };
       const active=sharedStore();
       // The fixed public art catalog is not ownership, balance, or purchase proof.
@@ -288,19 +330,19 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,getRacerName:racerName,renderCosmeticPreview,cloudSaveConnected:!!user(),hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,getRacerName:racerName,renderCosmeticPreview,cloudSaveConnected:!!user(),getLastConfirmedBalance:()=>current()&&enabled&&before===previewScope()?balanceCache.read(accountId,user()?.uid):null,hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');
-                const result=preview.preview({accountId,itemId:item.id,previewOnly:true,isCurrent});syncMirror();return result;
-              },onRestorePreview:()=>{preview?.clear();syncMirror();}
+                const result=preview.preview({accountId,itemId:item.id,previewOnly:true,isCurrent});previewedItem=item;syncMirror();return result;
+              },onRestorePreview:()=>{previewedItem=null;preview?.clear();syncMirror();}
             }:{})}};
           };
           const cleanup=mountShopPreview(root,decorate(options)),update=cleanup.update;clearUiPreview=cleanup.clearPreview;
-          cleanup.update=options=>{preview?.clear();update(decorate(options));};return cleanup;
+          cleanup.update=options=>update(decorate(options));return cleanup;
         },
         onCarPreview:preview?request=>preview.preview(request):undefined,onRestorePreview:()=>preview?.clear(),
-        onStudio:()=>goStudio(),onClose:()=>close(),
+        onStudio:()=>returnTo('studio',false),onClose:()=>returnTo(),
         onApply:typeof applyDraft==='function'?async request=>{
           const state=active.state(),item=PROFILE_SHOP_CATALOG.find(item=>item.id===request.itemId),before=scope();
           if(!current()||!request.isCurrent()||!user()||!item||state.accountId!==accountId||!state.inventory?.ownedItemIds.includes(item.id))throw Error('confirmed_ownership_required');
@@ -316,12 +358,18 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       if(opening)return opening;
       opening=performOpen().finally(()=>{opening=null;});return opening;
     }
-    async function performOpen(){
+    async function performOpen(restoring=false){
       if(!current())return false;
-      focus=document.activeElement;
+      if(dialog?.open)return true;
+      if(!restoring){
+        focus=document.activeElement;
+        const hub=content.querySelector('dialog.profile-hub');
+        const tab=hub?.querySelector('[data-ph-tab][aria-selected="true"]')?.dataset.phTab;
+        returnTab=!focus?.closest('.profile-customizer,[data-ph-launch="shop"]')&&tab==='achievements'?'achievements':'studio';
+      }
       observeAuth(currentAuth());if(!current())return false;
       openStudio?.();if(!current())return false;
-      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();watchRenderer();
+      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();
       return current();
     }
     const launchShop=()=>{if(!current())return false;void open();return true;};

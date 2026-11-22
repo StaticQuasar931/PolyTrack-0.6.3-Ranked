@@ -68,7 +68,15 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   dialog.querySelector('.ph-heading>p').textContent=profileName||confirmed?.name||'Racer profile';
   content.append(dialog);
   const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.innerHTML=hubIcon('shop')+'<span>Shop</span>';dialog.querySelector('.ph-tab-hint').before(shopNav);
-  const shopReady=()=>{const available=typeof content.__profileShopOpen==='function';shopButton.disabled=!available;shopNav.disabled=!available;shopButton.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');shopNav.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');entry.classList.toggle('ph-has-shop',available);};
+  let queuedShop=null;
+  const shopReady=()=>{const available=typeof content.__profileShopOpen==='function',loading=!!content.__profileShopMount;for(const button of [shopButton,shopNav]){button.disabled=!available&&!loading;button.setAttribute('aria-label',available||loading?'Open Style shop':'Style shop unavailable');if(queuedShop===button)button.setAttribute('aria-busy','true');else button.removeAttribute('aria-busy');}entry.classList.toggle('ph-has-shop',available||loading);};
+  const activateShop=button=>{
+    if(!current()||queuedShop)return;
+    if(content.__profileShopOpen){content.__profileShopOpen();return;}
+    const mount=content.__profileShopMount;if(!mount)return;
+    queuedShop=button;shopReady();
+    void mount.then(()=>{if(current()&&button.getClientRects().length)content.__profileShopOpen?.();},()=>{}).finally(()=>{queuedShop=null;if(current())shopReady();});
+  };
   content.addEventListener('profile-shop-ready',shopReady);shopReady();
   const journalHost = dialog.querySelector('[data-ph-journal]'), studioHost = dialog.querySelector('[data-ph-studio]');
   const studioPanel = dialog.querySelector('.ph-studio-panel');
@@ -219,12 +227,12 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   }
   const click = event => {
     const target = event.target.closest('button');
-    if(target===shopNav){if(current())content.__profileShopOpen?.();return;}
+    if(target===shopNav){activateShop(shopNav);return;}
     if (target?.hasAttribute('data-ph-close')) closeHub();
     else if (target?.hasAttribute('data-ph-tab')) showTab(target.dataset.phTab,undefined,true);
     // Native Studio click/change/input events bubble unchanged.
   };
-  const launch = event => {const button = event.target.closest('[data-ph-launch]');if (button && entry.contains(button)){if(button===shopButton){if(current())content.__profileShopOpen?.();}else openHub(button.dataset.phLaunch);}};
+  const launch = event => {const button = event.target.closest('[data-ph-launch]');if (button && entry.contains(button)){if(button===shopButton){activateShop(shopButton);}else openHub(button.dataset.phLaunch);}};
   const cancel = event => {event.preventDefault();event.stopPropagation();closeHub();};
   const closed = () => {if (!dialog.open) finishClose();};
   entry.addEventListener('click',launch);
