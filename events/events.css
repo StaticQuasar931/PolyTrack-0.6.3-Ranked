@@ -1560,3 +1560,138 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
   flex:0 0 auto!important;align-self:stretch!important;padding:16px!important;
  }
 }
+
+/* Native menu coordinates are scaled on laptops and short landscape screens. */
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px), (max-width: 1500px) and (max-height: 820px) {
+ #ui .track-selection-ui .tracks-container > .wrapper > .community-track-versions {
+  --sq-version-height: calc(44px / var(--ui-scale-factor, 1));
+  flex: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin-block: calc(8px / var(--ui-scale-factor, 1)) !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper > .community-track-versions > .button {
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: var(--sq-version-height) !important;
+  padding: calc(5px / var(--ui-scale-factor, 1)) !important;
+  font-size: calc(16px / var(--ui-scale-factor, 1)) !important;
+  line-height: 1.15;
+  white-space: normal !important;
+ }
+}
+
+/* The Community wrapper owns the compact rail and its version tabs. Keep the
+   standalone featured rail and the 1280px desktop geometry unchanged. */
+@media (min-width: 1320px) and (max-width: 1500px) and (min-height: 620px) and (max-height: 820px) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events {
+  --event-card-height: 224px;
+  width: calc(100% - 32px) !important;
+  margin-inline: 16px !important;
+  grid-template-columns: minmax(0, 3fr) repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > :is(.track.sq-kodub-weekly, .sq-kodub-unavailable) {
+  --kodub-details-width: 224px;
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  width: 100% !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-permanent-track {
+  grid-column: 3 !important;
+  grid-row: 2 !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .sq-event-card[data-event-kind="daily"] {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .sq-event-card[data-event-kind="weekly"] {
+  grid-column: 4 !important;
+  grid-row: 2 !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .track.track-of-the-week.sq-kodub-weekly > button.button {
+  width: 100% !important;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--kodub-details-width), 38%) !important;
+ }
+}
+
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px), (min-width: 1320px) and (max-width: 1500px) and (min-height: 620px) and (max-height: 820px) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly > .button > .track-of-the-week-info {
+  padding: 10px 12px !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info > .title {
+  font-size: clamp(24px, calc(24px / var(--ui-scale-factor, 1)), 48px) !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info > :not(.title) {
+  font-size: calc(15px / var(--ui-scale-factor, 1)) !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info > :is(.time-remaining, .personal-best) {
+  margin-top: 8px !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly .personal-best > div {
+  font-size: calc(18px / var(--ui-scale-factor, 1)) !important;
+ }
+}
+
+/* Short landscape: put the feature artwork and details side by side again. */
+@media (max-width: 1100px) and (max-height: 500px) and (orientation: landscape) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .track.track-of-the-week.sq-kodub-weekly > button.button {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  grid-template-rows: auto !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .track.sq-kodub-weekly > .button > img.cover:not(.environment) {
+  height: 100% !important;
+  max-height: calc(152px / var(--ui-scale-factor, 1)) !important;
+  align-self: center !important;
+ }
+}
+
+@media (max-width: 360px) and (orientation: portrait) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events {
+  grid-template-columns: minmax(0, 1fr) !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-permanent-track,
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .sq-event-card[data-event-kind] {
+  grid-column: 1 !important;
+  grid-row: auto !important;
+ }
+}
+
+/* Keep the track catalog closer on portrait screens, with room for wrapped labels. */
+@media (max-width: 600px) and (orientation: portrait) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events {
+  --event-card-height: 220px;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-permanent-track > .button,
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-event-track-buttons > .sq-event-card {
+  grid-template-rows: auto minmax(32px, auto) minmax(40px, 1fr) 30px minmax(56px, auto) !important;
+ }
+}
+@media (min-width: 380px) and (max-width: 600px) and (orientation: portrait) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > :is(.sq-kodub-weekly, .sq-kodub-unavailable) {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-permanent-track,
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events .sq-event-card[data-event-kind] {
+  grid-column: auto !important;
+  grid-row: auto !important;
+ }
+}
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px) {
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-featured-heading {
+  min-height: calc(46px / var(--ui-scale-factor, 1));
+  box-sizing: border-box;
+ }
+ #ui .track-selection-ui .tracks-container > .wrapper:has(> .community-track-versions) > .sq-featured-events > .sq-events-entry {
+  min-height: calc(44px / var(--ui-scale-factor, 1));
+  font-size: calc(14px / var(--ui-scale-factor, 1));
+ }
+}
+
+.sq-event-board .sq-event-erp-caption{color:#adc5dc;font-size:.84em;line-height:1.2;text-align:right}

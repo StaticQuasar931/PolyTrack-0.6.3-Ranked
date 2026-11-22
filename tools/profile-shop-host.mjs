@@ -243,7 +243,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     function createDialog(){
       ensureStyle();
       dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Style shop');
-      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
+      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><div class="sp-host-actions"><button type="button" data-shop-wallet-sync>Sync wallet</button><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></div></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
       const grid=document.createElement('div');grid.className='sp-live-layout';
       const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
       live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><div class="sp-live-actions"><button type="button" data-sp-live-clear hidden>Exit preview</button></div>';
@@ -259,10 +259,28 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       live.addEventListener('click',navigate);live.addEventListener('keydown',navigate);
       live.querySelector('[data-sp-live-clear]').addEventListener('click',()=>{if(clearUiPreview)clearUiPreview();else preview?.clear();syncMirror();});
       content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
+      dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close();}},true);
       dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
       const notice=dialog.querySelector('.sp-host-gate');
-      notice.textContent=!enabled?'Profile shop is not enabled yet. Purchases and claims are unavailable.':!user()?'Sign in to check your confirmed balance.':'';
+      notice.textContent=!enabled?'Profile shop is not enabled yet. Purchases and claims are unavailable.':!user()?'Browse and preview without connecting. Sync wallet to check purchases and eligible rewards.':'';
       notice.hidden=!notice.textContent;
+      const sync=dialog.querySelector('[data-shop-wallet-sync]');sync.hidden=!enabled;
+      sync.onclick=async()=>{
+        let origin=dialog;const generation=closeGeneration;sync.disabled=true;
+        const ticket={auth:currentAuth(),uid:user()?.uid||null,invalid:false};restorations.add(ticket);
+        try{
+          if(document.defaultView.navigator.onLine===false)throw Error('offline');
+          if(!user()&&typeof prepareAuth==='function')await prepareAuth();
+          if(!current()||closeGeneration!==generation||!acceptRestoration(ticket,currentAuth(),user()))return;
+          observeAuth(currentAuth());
+          if(!user())throw Error('wallet_unavailable');
+          if(!dialog&&closeGeneration===generation)await performOpen();
+          if(!current()||!dialog||closeGeneration!==generation)return;
+          origin=dialog;const activeSync=origin.querySelector('[data-shop-wallet-sync]');activeSync.disabled=true;
+          await view.open();if(dialog===origin)origin.querySelector('.sp-host-gate').hidden=true;
+        }catch{if(dialog===origin){const feedback=origin.querySelector('.sp-host-gate');feedback.hidden=false;feedback.textContent='Wallet unavailable. You can still browse and preview.';}}
+        finally{restorations.delete(ticket);if(dialog===origin)origin.querySelector('[data-shop-wallet-sync]').disabled=false;}
+      };
       const active=sharedStore();
       // The fixed public art catalog is not ownership, balance, or purchase proof.
       if(typeof getPreviewController==='function'&&typeof openStudio==='function')preview=bindProfileShopPreview(content,{accountId,getAccountId,getAuthScope:previewScope,getCatalog:()=>({version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG}),getPreviewController,openStudio:keepShopPreview,revision});
@@ -300,17 +318,10 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     }
     async function performOpen(){
       if(!current())return false;
-      const beforeClose=closeGeneration;
       focus=document.activeElement;
-      if(enabled&&document.defaultView.navigator.onLine!==false&&typeof prepareAuth==='function'){
-        const ticket={auth:currentAuth(),uid:user()?.uid||null,invalid:false};restorations.add(ticket);
-        try{await prepareAuth();}catch{/* Keep the catalog and previews usable without cloud access. */}finally{restorations.delete(ticket);}
-        if(!current()||closeGeneration!==beforeClose||!acceptRestoration(ticket,currentAuth(),user()))return false;
-      }
       observeAuth(currentAuth());if(!current())return false;
       openStudio?.();if(!current())return false;
       if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();watchRenderer();
-      if(enabled&&user()&&document.defaultView.navigator.onLine!==false){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Connection could not be confirmed. You can still browse and preview; purchases are unavailable.';}}}
       return current();
     }
     const launchShop=()=>{if(!current())return false;void open();return true;};

@@ -1165,3 +1165,49 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 [data-studio-favorite-preview]{display:flex;align-items:center;gap:8px;color:#c6d9ef;font-size:16px;min-width:0}[data-studio-favorite-preview] img,[data-studio-favorite-preview] svg{width:28px!important;height:28px!important;object-fit:contain;flex:none}.studio-track-options [role=option]{display:flex;align-items:center;gap:10px}.studio-track-options [role=option] img,.studio-track-options [role=option] svg{width:42px!important;height:42px!important;object-fit:contain;flex:none}
 
 .profile-hub{background-color:color-mix(in srgb,var(--profile-accent,#7ee7ff) 4%,#203363)!important}.profile-hub .ph-header{border-bottom-color:color-mix(in srgb,var(--profile-accent,#7ee7ff) 25%,#7395bd)}[data-studio-preview-part]{cursor:pointer}[data-studio-preview-part]:focus-visible{outline:2px solid #7ee7ff;outline-offset:3px}
+
+/* Keep the lobby tiles clear of the credits on compact laptops. */
+@media (min-width: 1101px) and (max-width: 1500px) and (max-height: 820px) {
+  html body .menu-ui > .main-buttons-container:not(.hidden) {
+    gap: 10px;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image {
+    width: clamp(140px, 12vw, 172px) !important;
+    height: clamp(140px, 12vw, 172px) !important;
+    margin-inline: 0 !important;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image > img {
+    width: 48% !important;
+    height: 48% !important;
+    object-fit: contain;
+  }
+}
+
+/* Keep phone tiles inside the safe area without shrinking their tap height. */
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px) {
+  html body .menu-ui > .main-buttons-container:not(.hidden) {
+    --sq-lobby-inset: max(12px, env(safe-area-inset-left), env(safe-area-inset-right));
+    width: calc((var(--sq-available-width, 100vw) - 2 * var(--sq-lobby-inset)) / var(--ui-scale-factor, 1));
+  }
+  html body .menu-ui > .main-buttons-container > .button-image > p {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.1;
+  }
+}
+@media (max-width: 1100px) and (max-height: 500px) and (orientation: landscape) {
+  html body .menu-ui > .main-buttons-container > .button-image {
+    height: calc(68px / var(--ui-scale-factor, 1)) !important;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image > img {
+    width: calc(28px / var(--ui-scale-factor, 1)) !important;
+    height: calc(28px / var(--ui-scale-factor, 1)) !important;
+    margin-block: calc(8px / var(--ui-scale-factor, 1)) calc(4px / var(--ui-scale-factor, 1)) !important;
+  }
+}
+
+@media (max-width: 600px) and (max-height: 650px) and (orientation: portrait) {
+  html body .menu-ui > .main-buttons-container:not(.hidden) {
+    margin-bottom: calc(90px / var(--ui-scale-factor, 1)) !important;
+  }
+}

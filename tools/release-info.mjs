@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 440,
+  "number": 444,
   "version": "0.6.3",
-  "revision": 376,
+  "revision": 377,
   "notes": [
-    "Your older event replays now show your current car paint, stickers, and accessories.",
-    "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
+    "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
+    "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
   ],
-  "preparedAt": "2026-11-18T02:50:46.619Z",
-  "committedAt": "2026-11-18T02:51:22.000Z"
+  "preparedAt": "2026-11-22T01:07:50.024Z",
+  "committedAt": "2026-11-22T01:10:38.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
