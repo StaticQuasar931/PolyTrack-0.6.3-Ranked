@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util';
 import {isFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
-import {retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
+import {publishedFullCanonicalReadPoint,retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -181,6 +181,24 @@ function validBoardLength(value, legacyLimit) {
 function hasCompleteTrackCoverage(board) {
   return board?.complete === true && board.sourceComplete !== false && board.totalEntriesExact !== false &&
     Array.isArray(board.entries) && (board.totalEntries === undefined || board.totalEntries === board.entries.length);
+}
+
+export function olderCanonicalSubset(prior,incoming,readPoint) {
+  if(!Number.isSafeInteger(readPoint)||!Number.isSafeInteger(incoming?.updatedAt)||incoming.updatedAt>=readPoint||
+    !hasCompleteTrackCoverage(prior)||!hasCompleteTrackCoverage(incoming)||prior.trackId!==incoming.trackId||
+    incoming.entries.length>=prior.entries.length)return false;
+  const byId=new Map(prior.entries.map(row=>[row.accountId??row.userId,row])),seen=new Set();
+  const restricted=row=>['needsReview','reviewHold','excluded','unscored','held','hold','unranked'].some(k=>row[k]===true)||
+    ['status','verificationStatus','validationState','reason'].some(k=>typeof row[k]==='string'&&/review|hold|held|exclud|unscored|reject|mismatch|unavailable/i.test(row[k]));
+  return incoming.entries.every(row=>{
+    const id=row.accountId??row.userId,old=byId.get(id);
+    if(!old||!TRACK_ID.test(id||'')||seen.has(id)||restricted(row))return false;
+    seen.add(id);
+    return Number.isSafeInteger(row.timeMs)&&row.timeMs===old.timeMs&&
+      (typeof row.uploadId==='string'||Number.isSafeInteger(row.uploadId))&&row.uploadId===old.uploadId&&
+      TRACK_ID.test(row.replayHash||'')&&row.replayHash===old.replayHash&&
+      (row.frames??row.raceTimeFrames)===(old.frames??old.raceTimeFrames);
+  });
 }
 
 function assertTrackAccountCoverage(prior, incoming, trackId) {
@@ -911,6 +929,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     .filter(id => TRACK_ID.test(id)).sort();
   const sourceRepairs=new Map();
   const sourceRechecks = new Map();
+  const olderCanonicalTracks = new Set();
   const canonicalRetentions = new Map();
   // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
   // This is local staging validation only; network responses retain their paged-source checks.
@@ -956,8 +975,9 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
         const regression = new RegExp('^Track account coverage regressed for ' + id +
           ': [1-9][0-9]* prior accounts missing; reviewed removal or replacement evidence required$');
         if (!(error instanceof PublicBackupDeferredError) || !regression.test(error.message) || trackFetchLimit === 0) throw error;
+        if(cached&&olderCanonicalSubset(cached,board,publishedFullCanonicalReadPoint({context:nativeVerification,trackId:id,bytes:cachedBytes}))){olderCanonicalTracks.add(id);continue;}
         sourceRechecks.set(id, {board, error});
-        if (sourceRechecks.size > trackFetchLimit) throw error;
+        if (sourceRechecks.size > trackFetchLimit) throw new PublicBackupDeferredError(error.message+' (source recheck budget exceeded)');
         continue;
       }
       sourceRepairs.set(relative,board);
@@ -985,7 +1005,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const overlay = !!record.nativeLedgerOverlay || cached.entries.some(row=>row.nativeLedgerKey);
       let sourceDigest = overlay ? nativeTrackSourceDigest(record,cached,cachedBytes,previous.nativeVerificationLedger,nativeVerification) : null;
       if (!overlay) try {sourceDigest=publicTrackConfirmationDigest(projected,id);} catch { /* Legacy partial boards cannot confirm authenticated source coverage. */ }
-      if (overlay && !sourceDigest && !retainedNativeBoardMatches({context:nativeVerification,authority:previous.nativeVerificationLedger,board:cached,bytes:cachedBytes})) throw Error('Cached native overlay source binding is not validated');
+      if (overlay && !sourceDigest && !olderCanonicalTracks.has(id) && !retainedNativeBoardMatches({context:nativeVerification,authority:previous.nativeVerificationLedger,board:cached,bytes:cachedBytes})) throw Error('Cached native overlay source binding is not validated');
       const confirmation = confirmedTracks instanceof Map ? confirmedTracks.get(id) : null;
       if (confirmation && TRACK_ID.test(confirmation.sha256||'') && sourceDigest && confirmation.sha256!==sourceDigest)
         throw Error('Authenticated source confirmation changed');
@@ -1007,7 +1027,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const plannedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds.filter(id=>!fullCanonicalSource?.has(id)),cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
     trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
   // Required source rechecks consume the existing budget before ordinary refreshes.
-  const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id))].slice(0, trackFetchLimit);
+  const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id)&&!olderCanonicalTracks.has(id))].slice(0, trackFetchLimit);
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     // The branded complete frozen DB point proves absence; retain the existing 404 result path.
     if(fullCanonicalSource&&!fullCanonicalSource.has(id))return {id,value:null};
@@ -1327,7 +1347,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,
+    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,olderCanonicalTracksPreserved:olderCanonicalTracks.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

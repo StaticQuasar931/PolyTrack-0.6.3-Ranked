@@ -1,5 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
-import {runPublicSnapshotBackup,publicTrackConfirmationDigest,authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
+import {createHash} from 'node:crypto';
+import {pinRetainedNativeBoards,publishedFullCanonicalReadPoint,rememberPublishedHydration} from './retained-native-board-cache.mjs';
+import {olderCanonicalSubset,runPublicSnapshotBackup,publicTrackConfirmationDigest,authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
 const id='a'.repeat(64),other='b'.repeat(64);
 const board=()=>authenticatedOverallTrackBackup({trackId:id,algorithmVersion:'participation-v8-s1',schemaVersion:6,revision:3,sourceRevision:3,updatedAt:250,complete:true,totalEntries:2,entries:[{accountId:id,timeMs:1000,rank:1,runVerified:true,integrityVerified:true},{accountId:other,timeMs:1100,rank:2,runVerified:true,integrityVerified:true}]},id);
 async function fixture(t){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'source-reuse-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));let requests=0;const options={directory,now:1000,trackIds:[id],trackFetchLimit:0,capturedOverall:{updatedAt:300,entries:[],trackSummaries:[],trackCatalog:[{trackId:id,updatedAt:250}]},capturedTracks:new Map([[id,board()]]),fetchImpl:async url=>{requests++;if(String(url).endsWith('/catalog'))return Response.json({periods:[],archives:[]});assert.ok(String(url).endsWith('/permanent-rolling-hills/snapshot'));return new Response('',{status:404});},log:()=>{}};return {directory,options,requests:()=>requests,read:name=>fs.readFile(path.join(directory,name),'utf8').then(JSON.parse)};}
@@ -29,4 +31,24 @@ test('same-timestamp changed frozen bytes repair the saved source without redund
  assert.equal(result.tracks[id].checkedAt,1000);
  assert.deepEqual(await f.read('tracks/'+id+'.json'),board());
  assert.equal(result.tracksFetched,0);
+});
+
+test('published full scan protects an exact older subset, not a changed run or review hold',async t=>{
+ const f=await fixture(t),root=f.directory,dir='public-snapshots92',logical='tracks/'+id+'.json';
+ const prior={...board(),complete:true,sourceComplete:true,totalEntriesExact:true,ranksExact:true,
+   entries:board().entries.map((row,i)=>({...row,uploadId:i+1,frames:60+i,replayHash:'c'.repeat(64)}))};
+ const bytes=Buffer.from(JSON.stringify(prior)),sha=createHash('sha256').update(bytes).digest('hex'),ledger={manifestHash:'d'.repeat(64)};
+ const manifest={nativeVerificationLedger:{manifestHash:ledger.manifestHash},tracks:{[id]:{path:logical,sha256:sha,
+   fullCanonicalCapture:{source:'firestore-full-canonical',complete:true,fullScanReadPoint:new Date(1000).toISOString(),sourceRows:2,retainedRows:0}}}};
+ await fs.mkdir(path.join(root,'tracks'));await fs.writeFile(path.join(root,logical),bytes);
+ await fs.writeFile(path.join(root,'snapshot-current.json'),JSON.stringify({currentdir:dir}));
+ rememberPublishedHydration(root,[{logicalPath:logical,decoded:bytes},{logicalPath:'manifest.json',decoded:Buffer.from(JSON.stringify(manifest))}],dir);
+ const context={sourceManifest:manifest,ledger,canonicalRows:[],policy:{engineDigest:id,compatibleEngines:[],verifierVersion:"test",verifierFingerprint:id,resourceProfiles:["standard"],reviewPolicyVersions:["test"],trackContentHashes:{},trackGeometries:{}}};await pinRetainedNativeBoards({context,directory:root,root});
+ const point=publishedFullCanonicalReadPoint({context,trackId:id,bytes});
+ assert.equal(point,1000);assert.equal(publishedFullCanonicalReadPoint({context,trackId:id,bytes:Buffer.from('{}')}),null);
+ const older={...prior,totalEntries:1,entries:[prior.entries[0]]};
+ assert(olderCanonicalSubset(prior,older,point));assert(olderCanonicalSubset(prior,{...older,entries:[],totalEntries:0},point));
+ for(const [key,value] of [['timeMs',42],['uploadId',99],['replayHash','a'.repeat(64)],['reviewHold',true],['verificationStatus','held'],['frames',42]])
+  assert(!olderCanonicalSubset(prior,{...older,entries:[{...older.entries[0],[key]:value}]},point),key);
+ assert(!olderCanonicalSubset(prior,{...older,updatedAt:point},point));assert(!olderCanonicalSubset(prior,older,null));
 });

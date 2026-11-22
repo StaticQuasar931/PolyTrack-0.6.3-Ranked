@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 454,
+    "number": 455,
     "version": "0.6.3",
-    "revision": 387,
+    "revision": 388,
     "notes": [
-      "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
+      "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
     ]
   },
   "entries": [
+    {
+      "number": 454,
+      "title": "Revalidate exact retained snapshot proofs",
+      "commit": "3e4ed7a0df26608587a954d57ae6f5dd03b6f85f",
+      "committedAt": "2026-11-22T19:51:59.000Z",
+      "notes": [
+        "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
+      ]
+    },
     {
       "number": 453,
       "title": "Compact event estimates and add Workshop sticker placements",
@@ -194,15 +203,6 @@ const historyData = {
       "committedAt": "2026-11-16T10:19:58.000Z",
       "notes": [
         "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
-      ]
-    },
-    {
-      "number": 428,
-      "title": "Speed up snapshot packaging and verification checkpoints",
-      "commit": "c8c04331a3a8431467f74a84e401d5ae4d149058",
-      "committedAt": "2026-11-16T09:30:50.000Z",
-      "notes": [
-        "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
       ]
     }
   ],
