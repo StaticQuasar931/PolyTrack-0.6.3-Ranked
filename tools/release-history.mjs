@@ -2,15 +2,45 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 457,
+    "number": 462,
     "version": "0.6.3",
-    "revision": 390,
+    "revision": 391,
     "notes": [
-      "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
-      "Official and Community podium rankings show the actual top podium finishes in that scope."
+      "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
     ]
   },
   "entries": [
+    {
+      "number": null,
+      "title": "Quarantine only changed recordings in routine snapshots",
+      "commit": "34bdf455af31be91c6fe239c35f314b29f597495",
+      "committedAt": "2026-11-22T21:10:19.000Z",
+      "notes": []
+    },
+    {
+      "number": null,
+      "title": "Omit invalidated boards from routine snapshot publication",
+      "commit": "be70049f3cc9015d37d039a4ca5e422e0e5e6106",
+      "committedAt": "2026-11-22T20:59:24.000Z",
+      "notes": []
+    },
+    {
+      "number": null,
+      "title": "Defer changed recordings without blocking snapshot capture",
+      "commit": "12635079b96deee2611598acac81d6a39e63df41",
+      "committedAt": "2026-11-22T20:48:11.000Z",
+      "notes": []
+    },
+    {
+      "number": 457,
+      "title": "Refresh Kodub rollover and compact snapshot history",
+      "commit": "b1d639c572cd6fb62e00235362c761576de69803",
+      "committedAt": "2026-11-22T20:33:43.000Z",
+      "notes": [
+        "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
+        "Official and Community podium rankings show the actual top podium finishes in that scope."
+      ]
+    },
     {
       "number": 456,
       "title": "Bound manual canonical recovery reads",
@@ -168,42 +198,6 @@ const historyData = {
       "notes": [
         "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
         "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
-      ]
-    },
-    {
-      "number": 435,
-      "title": "Fix CDN deployment relocation test dependencies",
-      "commit": "a826c81488f819abee78cb769d746f83be5a898c",
-      "committedAt": "2026-11-16T11:21:08.000Z",
-      "notes": [
-        "Fixed a release packaging check so the latest update can reach CDN players."
-      ]
-    },
-    {
-      "number": 434,
-      "title": "Batch saved snapshot checkout for offline benchmarks",
-      "commit": "d81a005893138422118a6474c9d0ed3c2f962e7d",
-      "committedAt": "2026-11-16T11:07:08.000Z",
-      "notes": [
-        "Reduced snapshot download overhead for background replay checks."
-      ]
-    },
-    {
-      "number": 433,
-      "title": "Align cleanup test with sandboxed native browser",
-      "commit": "28431ad14a917cae8d6a99b5f2d4bfe4153b1975",
-      "committedAt": "2026-11-16T11:03:32.000Z",
-      "notes": [
-        "Fixed a background replay-check startup issue so saved-run verification can proceed."
-      ]
-    },
-    {
-      "number": 432,
-      "title": "Add offline replay benchmark and consistency audit",
-      "commit": "38b8c989de127e4683220d1d0d4ffa409c98905e",
-      "committedAt": "2026-11-16T10:59:06.000Z",
-      "notes": [
-        "Expanded saved-replay checks to help keep race results and leaderboards fair."
       ]
     }
   ],
