@@ -122,3 +122,6 @@ html body #overallProfilePopup .profile-podium-wide .profile-medal-card--single[
 .profile-podium-details li+li{margin-top:0}
 .profile-podium-details li button,.profile-podium-details li[data-large-field] button{border:0;border-bottom:1px solid #466287;background:transparent;padding:8px 6px}
 .profile-podium-details li button:is(:hover,:focus-visible){background:#2e507e}
+
+.profile-podium-details{max-block-size:min(430px,65dvh)}
+.profile-podium-details[data-result-count="1"]{inline-size:min(420px,calc(100% - 24px))}

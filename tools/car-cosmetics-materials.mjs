@@ -2,13 +2,13 @@ const {CAR_COSMETIC_CATALOG,normalizeCarSelection,normalizeStickerLayout,STICKER
 const {carAttachmentFrames,carAttachmentParts}=await import(new URL('./car-cosmetics-geometry.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const bodyFor=cap=>{const meshes=[];cap.chassis.traverse(node=>{if(node.name==='Body'&&node.geometry?.attributes?.position)meshes.push(node);});if(meshes.length!==1)throw Error('Exact native Body mesh is unavailable');return meshes[0];};
 export function inspectCarBody(cap){const body=bodyFor(cap),positions=body.geometry.getAttribute('position');body.updateWorldMatrix(true,false);cap.chassis.updateWorldMatrix(true,false);const m=cap.chassis.matrixWorld.clone().invert().multiply(body.matrixWorld).elements,vertices=new Float32Array(positions.count*3);for(let i=0;i<positions.count;i++){const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);vertices.set([m[0]*x+m[4]*y+m[8]*z+m[12],m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14]],i*3);}return {body,frames:carAttachmentFrames(vertices,body.geometry.index?.array)};}
-export function createNativeCarAppearance(cap,selection,density='low'){
- const value=normalizeCarSelection(selection),{body,frames}=inspectCarBody(cap),owned=[],groups=[],original=body.material,shaders=new Map();let replacement=null,dead=false,materials=0,geometries=0;
+export function createNativeCarAppearance(cap,selection,density='low',{prepared,layer}={}){
+ const value=normalizeCarSelection(selection),{body,frames}=prepared||inspectCarBody(cap),owned=[],groups=[],original=body.material,shaders=new Map();let replacement=null,dead=false,materials=0,geometries=0;
  const dispose=()=>{if(dead)return;dead=true;if(replacement&&body.material===replacement)body.material=original;for(const group of groups)cap.chassis.remove(group);for(const clear of owned.reverse())try{clear();}catch{}};
  const ownMaterial=material=>{materials++;owned.push(()=>material.dispose());cap.renderer.addMaterial(material);owned.push(()=>cap.renderer.removeMaterial(material));return material;};
  try{
   const finish=CAR_COSMETIC_CATALOG.finishes.find(item=>item.id===value.finish);
-  if(finish.id!=='original'){
+  if((!layer||layer==='paint')&&finish.id!=='original'){
    if(!Array.isArray(original)||original.length<4)throw Error('Native paint palette is unsupported');
    const indices=original.flatMap((m,i)=>m.name==='Main'?[i]:[]);if(indices.length!==1||!indices.every(i=>original[i].isMeshStandardMaterial&&typeof original[i].clone==='function'&&typeof original[i].onBeforeCompile==='function'))throw Error('Native paint shader is unsupported');
    replacement=original.slice();for(const index of indices){
@@ -21,15 +21,41 @@ export function createNativeCarAppearance(cap,selection,density='low'){
   }
   const attachments=['accessory','emblem','front','rear','sticker'].map(category=>[category,value[category],value.stickerLayout,false]);
   if(value.extraSticker&&!stickerPositionsConflict(value))attachments.push(['sticker',value.extraSticker.id,value.extraSticker.layout,true]);
-  for(const [category,id,stickerLayout,secondary] of attachments){if(id==='none')continue;const frame=category==='accessory'?frames.roof:category==='sticker'?(frames.hood||frames.roof):category==='emblem'&&id==='crest'?frames.hood:(category==='rear'||category==='front'&&id==='rearbar')?frames.rear:frames.front;if(!frame)throw Error('This native surface is unsupported');
+  for(const [category,id,stickerLayout,secondary] of attachments){if(id==='none'||layer&&layer!==(secondary?'sticker2':category))continue;const frame=category==='accessory'?frames.roof:category==='sticker'?(frames.hood||frames.roof):category==='emblem'&&id==='crest'?frames.hood:(category==='rear'||category==='front'&&id==='rearbar')?frames.rear:frames.front;if(!frame)throw Error('This native surface is unsupported');
    const parts=carAttachmentParts(category==='rear'?'front':category,id,density),group=new cap.three.Group();group.name='PolyTrackVisual-'+category+'-'+id+(secondary?'-2':'');groups.push(group);
    const V=group.position.constructor,up=category==='accessory'||category==='sticker'||category==='emblem'&&id==='crest';group.position.set(...frame.point);group.position.addScaledVector(new V(...frame.normal),category==='sticker'?0:up?-.001:.003);group.quaternion.setFromUnitVectors(new V(...(up?[0,1,0]:[0,0,1])),new V(...frame.normal));
    if(category==='accessory'){const all=parts.flatMap(part=>[...part.positions]),width=Math.max(...all.filter((_,i)=>i%3===0))-Math.min(...all.filter((_,i)=>i%3===0)),depth=Math.max(...all.filter((_,i)=>i%3===2))-Math.min(...all.filter((_,i)=>i%3===2));const scale=Math.min(1,frame.width*.8/width,frame.depth*.8/depth);if(!Number.isFinite(scale)||scale<.2)throw Error('Roof mount is too small');group.scale.setScalar(scale);}
-   if(category==='sticker'){const layout=normalizeStickerLayout(stickerLayout),preset=layout.position!=='center';const alongside=value.emblem==='crest'&&frame===frames.hood;const [row,column]=layout.position.split('-');const x=preset?({left:-.22,center:0,right:.22}[column]??0):(alongside?.22:0),z=preset?(row==='nose'?.18:-.18):0;const across=new V(1,0,0).applyQuaternion(group.quaternion),along=new V(0,0,1).applyQuaternion(group.quaternion);group.position.addScaledVector(across,frame.width*x).addScaledVector(along,frame.depth*z);group.scale.setScalar(Math.min(STICKER_SIZES[layout.size],frame.width*(1-2*Math.abs(x))/.40,frame.depth*(1-2*Math.abs(z))/.40));}
+   if(category==='sticker'){const layout=normalizeStickerLayout(stickerLayout),preset=layout.position!=='center';const alongside=value.emblem==='crest'&&frame===frames.hood;const [row,column]=layout.position.split('-');const x=preset?({left:-.22,center:0,right:.22}[column]??0):(alongside?.22:0),z=preset?(row==='nose'?.18:-.18):0;const across=new V(1,0,0).applyQuaternion(group.quaternion),along=new V(0,0,1).applyQuaternion(group.quaternion);group.position.addScaledVector(across,frame.width*x).addScaledVector(along,frame.depth*z);const fit=Math.min(1,frame.width*(1-2*Math.abs(x))/.40,frame.depth*(1-2*Math.abs(z))/.40);group.scale.setScalar(fit*STICKER_SIZES[layout.size]/STICKER_SIZES.large);}
    const Geometry=body.geometry.constructor,Attribute=body.geometry.getAttribute('position').constructor;
    for(const part of parts){const geometry=new Geometry();geometries++;owned.push(()=>geometry.dispose());geometry.setAttribute('position',new Attribute(part.positions,3));geometry.computeVertexNormals();const material=ownMaterial(new cap.three.Material({color:part.color,roughness:.52,metalness:.15,emissive:part.emissive?part.color:0,emissiveIntensity:part.emissive*(density==='low'?.65:1),flatShading:!part.decal,polygonOffset:part.decal,polygonOffsetFactor:-1,polygonOffsetUnits:-1,depthWrite:!part.decal}));material.name='PolyTrackAttachment-'+category;const mesh=new cap.three.Mesh(geometry,material);mesh.name=group.name+'-part';mesh.raycast=()=>{};mesh.castShadow=false;mesh.receiveShadow=false;group.add(mesh);}
    cap.chassis.add(group);
   }
   return {clear:dispose,inspect(){cap.chassis.updateWorldMatrix(true,true);const inverse=cap.chassis.matrixWorld.clone().invert(),mounts=groups.map(group=>{group.updateWorldMatrix(true,true);const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];group.traverse(node=>{const a=node.geometry?.attributes?.position;if(!a)return;const m=inverse.clone().multiply(node.matrixWorld).elements;for(let i=0;i<a.count;i++){const x=a.getX(i),y=a.getY(i),z=a.getZ(i),p=[m[0]*x+m[4]*y+m[8]*z+m[12],m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14]];for(let j=0;j<3;j++){min[j]=Math.min(min[j],p[j]);max[j]=Math.max(max[j],p[j]);}}});return{name:group.name,anchor:group.position.toArray(),min,max};});const style=cap.car?.getCarStyle?.();return {selection:value,density,bodyBounds:frames.bounds,roof:frames.roof,front:frames.front,hood:frames.hood,rear:frames.rear,mounts,materials,geometries,style:style?{primary:style.primaryHex,secondary:style.secondaryHex,pattern:style.pattern}:null,paint:(Array.isArray(body.material)?body.material:[body.material]).map((m,i)=>({name:m.name,type:m.type,color:m.color?.getHex(),roughness:m.roughness,metalness:m.metalness,emissive:m.emissive?.getHex(),emissiveIntensity:m.emissiveIntensity,...(shaders.has(i)?{secondaryUniform:shaders.get(i).uniforms.carColorSecondary?.value?.toArray(),patternPreserved:!!shaders.get(i).uniforms.carColorPattern,secondaryGlow:!!shaders.get(i).uniforms.polytrackPaintGlow}:{})})),disposed:dead};}};
  }catch(error){dispose();throw error;}
+}
+
+export function createCarAppearanceLayers(cap){
+ const prepared=inspectCarBody(cap),layers=new Map(),rebuilds={};
+ let value=null,density='low';
+ function replace(layer,key,next,quality){
+   const existing=layers.get(layer);
+   if(existing?.key===key)return;
+   existing?.appearance.clear();layers.delete(layer);
+   const appearance=createNativeCarAppearance(cap,next,quality,{prepared,layer});
+   layers.set(layer,{key,appearance});rebuilds[layer]=(rebuilds[layer]||0)+1;
+ }
+ function update(selection,quality){
+   const next=normalizeCarSelection(selection);
+   const decal=next.extraSticker&&!stickerPositionsConflict(next)?next.extraSticker:null;
+   const crest=next.emblem==='crest';
+   replace('paint',quality+':'+next.finish,next,quality);
+   for(const layer of ['accessory','emblem','front','rear'])replace(layer,quality+':'+next[layer],next,quality);
+   replace('sticker',JSON.stringify([quality,next.sticker,normalizeStickerLayout(next.stickerLayout),crest]),next,quality);
+   replace('sticker2',JSON.stringify([quality,decal,crest]),next,quality);
+   value=next;density=quality;
+ }
+ return {update,clear(){for(const {appearance} of layers.values())appearance.clear();layers.clear();},inspect(){
+   const snapshots=['paint','accessory','emblem','front','rear','sticker','sticker2'].map(key=>layers.get(key).appearance.inspect());
+   return {...snapshots[0],selection:value,density,layerRebuilds:{...rebuilds},mounts:snapshots.flatMap(n=>n.mounts),materials:snapshots.reduce((n,s)=>n+s.materials,0),geometries:snapshots.reduce((n,s)=>n+s.geometries,0)};
+ }};
 }

@@ -134,7 +134,8 @@ function themeDialog(node, title, description) {
 }
 
 function isVisible(document) { return document.visibilityState !== 'hidden'; }
-function defaultIdle(document) { return isVisible(document) && (typeof document.hasFocus !== 'function' || document.hasFocus()); }
+// Standalone UI fallback only. The game passes a controller-aware idle guard.
+function focusOnlyFallback(document) { return isVisible(document) && (typeof document.hasFocus !== 'function' || document.hasFocus()); }
 
 function utcTime(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return null;
@@ -326,7 +327,7 @@ function expireLauncherDiscovery(document, commit) {
  * memory is the final fallback when both stores are denied (this page only).
  */
 export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
-  isReady = () => false, isIdle = defaultIdle, isInitialLoading, storage, sessionStorage,
+  isReady = () => false, isIdle = focusOnlyFallback, isInitialLoading, storage, sessionStorage,
   verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
   now = Date.now, releaseHistory = RELEASE_HISTORY, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
@@ -496,7 +497,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
  */
 export function installSiteUpdates({ revision, document = globalThis.document, fetch: fetchImpl = globalThis.fetch,
   now = Date.now, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout,
-  isIdle = defaultIdle, canReload = () => true, endpoint = CANONICAL_SITE_VERSION_URL,
+  isIdle = focusOnlyFallback, canReload = () => true, endpoint = CANONICAL_SITE_VERSION_URL,
   intervalMs = CHECK_INTERVAL_MS, timeoutMs = REQUEST_TIMEOUT_MS, onCompatibilityChange = () => {} }) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new TypeError('revision must be a non-negative safe integer');
   if (!document || typeof document.addEventListener !== 'function') throw new TypeError('document is required');

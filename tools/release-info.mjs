@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 446,
+  "number": 447,
   "version": "0.6.3",
-  "revision": 379,
+  "revision": 380,
   "notes": [
-    "Equip two stickers in different spots and save them with Garage Save.",
-    "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
+    "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
+    "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
   ],
-  "preparedAt": "2026-11-22T02:01:12.693Z",
-  "committedAt": "2026-11-22T02:01:15.000Z"
+  "preparedAt": "2026-11-22T02:27:19.261Z",
+  "committedAt": "2026-11-22T02:27:21.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

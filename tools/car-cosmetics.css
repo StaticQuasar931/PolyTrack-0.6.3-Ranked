@@ -53,3 +53,8 @@
 .car-sticker-slots button{font:600 13px/1.2 sans-serif}
 .car-sticker-slots [aria-pressed=true]{background:#334b77;border-color:#e1f6ff}
 .car-workshop-swatches>button[data-option-category=sticker] svg{background:#2f436a;width:52px;height:48px;padding:3px;box-sizing:border-box;border:1px solid #516b91}
+
+.car-workshop-swatches>button[data-option-category=sticker]{min-height:92px}
+.car-workshop-swatches>button[data-option-category=sticker] svg{width:63px;height:57px;padding:4px}
+.car-cosmetic-workshop [data-category-tab=sticker]{color:#b4f3ff}
+.car-cosmetic-workshop [data-categories]{background:#212b58;padding-block:3px}

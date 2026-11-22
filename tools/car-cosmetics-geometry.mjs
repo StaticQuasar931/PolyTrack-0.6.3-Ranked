@@ -36,6 +36,7 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='roofbox'){for(const x of [-.1,.1])for(const z of [-.15,.15])add(box(.035,.028,.045,x,.014,z),dark);add(box(.29,.115,.43,0,.085),0x7296ad);add(box(.28,.016,.42,0,.15),metal);}
   else if(id==='crown'){for(const x of [-.13,.13])add(box(.03,.035,.22,x),gold);for(const z of [-.1,.1])add(box(.28,.035,.03,0,.0175,z),gold);for(const x of [-.1,0,.1])add(box(.035,x===0?.16:.12,.035,x,.035+(x===0?.16:.12)/2,.1),gold);}
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
+  else if(id==='roof-vent'){add(box(.124,.025,.16),dark);for(const z of [-.044,0,.044])add(box(.11,.021,.018,0,.025,z),0x93adbd);}
   else throw Error('Unknown roof visual');
  }else if(category==='sticker'){
   const shapes=stickerShapes[id];if(!shapes)throw Error('Unknown sticker');
@@ -52,6 +53,7 @@ export function carAttachmentParts(category,id,density='low'){
   }
  }else if(category==='emblem'){
   if(id==='crest'){for(const [w,d,y,color]of [[.045,.06,.002,dark],[.032,.047,.0025,gold]])add(new Float32Array([0,y,-d,-w,y,0,0,y,d,0,y,-d,0,y,d,w,y,0]),color,0,true);}
+  else if(id==='grid-mark'){add(box(.115,.095,.012,0,-.0475,.006),dark);for(const x of [-.027,.027])add(box(.025,.052,.008,x,-.026,.015),cyan);}
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
   else throw Error('Unknown nose emblem');
@@ -59,6 +61,8 @@ export function carAttachmentParts(category,id,density='low'){
   if(id==='rearbar'){add(box(.36,.045,.025,0,0,.0125),dark);add(box(.3,.016,.012,0,0,.031),cyan,.2);}
   else if(id==='splitter'){add(box(.56,.025,.08,0,0,.035),dark);add(box(.52,.009,.025,0,-.009,.075),cyan);}
   else if(id==='lamps'){add(box(.4,.025,.025,0,0,.0125),dark);for(const x of [-.14,.14])add(box(.07,.07,.04,x,.018,.035),0xffe7a5,.3);}
+  else if(id==='tow-plate'){add(box(.16,.038,.026,0,-.010,.012),dark);add(box(.072,.021,.012,0,-.004,.029),gold);}
+  else if(id==='fog-lamp'){add(box(.128,.035,.027,0,-.013,.014),dark);add(box(.09,.019,.012,0,-.005,.031),0xfc443b,.28);}
   else throw Error('Unknown front accessory');
  }else throw Error('Unknown attachment category');
  const result=Object.freeze(parts);cache.set(key,result);return result;

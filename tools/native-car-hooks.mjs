@@ -20,7 +20,7 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   const metrics={styleWrites:0,saveEvents:0,authorizedSaves:0};
   const matrixOwners=new WeakMap(),renderers=new WeakSet(),parked=new WeakSet(),candidates=new Map(),restores=[];
   const replayOwners=new WeakMap(),replayCars=new WeakSet();let responseOwners=null;
-  let profileStore=null,boundRoot=null,queued=false,dead=false,lastToken=null,identityChanged=false;
+  let saveIntent=null,profileStore=null,boundRoot=null,queued=false,dead=false,lastToken=null,identityChanged=false;
   const safe=fn=>{try{return fn();}catch{return null;}};
   const wrap=(target,key,after)=>{
     const descriptor=Object.getOwnPropertyDescriptor(target,key);if(typeof descriptor?.value!=='function')throw Error('Native interface unavailable: '+key);
@@ -62,7 +62,7 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   wrap(Car.prototype,'addFinishCallback',car=>{const entry=exact(car);if(entry)runtime.created({car,chassis:entry.node,renderer:entry.renderer,three,controlled:true});});
   wrap(Car.prototype,'dispose',car=>{runtime.carDisposed(car);for(const list of candidates.values())list.delete(car);});
   wrap(Profile.prototype,'getCurrentUserProfile',(store,args,result)=>{profileStore=store;if(result?.token!==lastToken){if(lastToken!==null)runtime.accountChanged?.();lastToken=result?.token;identityChanged=true;schedule();}});
-  wrap(Profile.prototype,'setCarStyle',store=>{metrics.styleWrites++;profileStore=store;if(boundRoot&&isExplicitSave(window.event)){metrics.authorizedSaves++;runtime.saved(boundRoot);}});
+  wrap(Profile.prototype,'setCarStyle',store=>{metrics.styleWrites++;profileStore=store;const intent=saveIntent;saveIntent=null;if(intent&&boundRoot===intent.root&&boundRoot?.isConnected&&store.getCurrentUserProfile()?.token===intent.token&&window.performance.now()<=intent.until){metrics.authorizedSaves++;runtime.saved(boundRoot);}});
   function isExplicitSave(event){
     if(!event)return false;
     const button=event.target?.closest?.('button'),isSave=button&&button.querySelector('img[src$="/save.svg"],img[src="images/save.svg"]');
@@ -70,7 +70,14 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
     return !!boundRoot&&(!!enter||!!isSave&&!!button.closest('.customization-ui,.profile-settings-ui'));
 
   };
-  const explicitSave=event=>{if(isExplicitSave(event))metrics.saveEvents++;};
+  const explicitSave=event=>{
+    saveIntent=null;if(!isExplicitSave(event))return;
+    metrics.saveEvents++;const token=profileStore?.getCurrentUserProfile()?.token;if(!token)return;
+    const confirmed=!!event.target?.closest?.('.profile-settings-ui');
+    const intent={root:boundRoot,token,until:window.performance.now()+(confirmed?3000:250)};
+    saveIntent=intent;
+    if(!confirmed)window.queueMicrotask(()=>{if(saveIntent===intent)saveIntent=null;});
+  };
   document.addEventListener('click',explicitSave,true);document.addEventListener('keydown',explicitSave,true);
   const observer=new window.MutationObserver(schedule);observer.observe(document.body,{childList:true,subtree:true});
   const api=Object.freeze({withReplayOwners(rows,callback){const prior=responseOwners;responseOwners=replayOwnerScope(rows);try{return callback();}finally{responseOwners=prior;}},stats:()=>({...metrics}),dispose(){if(dead)return;dead=true;observer.disconnect();document.removeEventListener('click',explicitSave,true);document.removeEventListener('keydown',explicitSave,true);if(boundRoot)runtime.close(boundRoot);for(const restore of restores.reverse())restore();candidates.clear();profileStore=null;lastToken=null;if(window.__polytrackNativeCarVisualHooks===api)delete window.__polytrackNativeCarVisualHooks;}});
