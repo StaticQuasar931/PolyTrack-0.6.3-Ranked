@@ -15,7 +15,7 @@ function fn(name,end){const a=source.indexOf('  function '+name+'('),b=source.in
 for(const kind of ['daily','weekly','kodub'])for(const scoringVersion of ['time-ratio-v1','time-gap-v2'])test(kind+' provisional hover matches its EXISTING '+scoringVersion+' formula and cap without awarding points',()=>{
  const p=period(kind,{scoringVersion}),pending=waiting({rp:999999,periodId:p.id,trackId:p.trackId}),before=structuredClone(pending);
  const result=eventRunErpPresentation(pending,{period:p},p,5000);
- assert.equal(result.estimated,true);assert.match(result.text,new RegExp('Estimated '+capturedEventRp(p,pending.timeMs)+' ERP if verified'));
+ assert.equal(result.estimated,true);assert.equal(result.text,'~'+capturedEventRp(p,pending.timeMs).toLocaleString('en-US')+' ERP');
  assert.match(result.title,/No ERP is awarded yet/);assert.deepEqual(pending,before);
 });
 test('unscored, held, wrong-period, inactive, unknown and schedule-only previews never imply awards or eligibility',()=>{
@@ -32,10 +32,10 @@ test('actual per-run ERP uses the saved award, not a formula, lifetime total or 
  assert.equal(eventRunErpPresentation(r,{period:p,entries:[r]},p,5000).text,'4,321 ERP');assert.deepEqual(r,before);
 });
 test('badge ERP text is supplemental and cannot change verification classes or proof',()=>{
- const attrs={},icon={},points=[],state={dataset:{},title:'date',querySelector:()=>icon,setAttribute:(k,v)=>attrs[k]=v,prepend:node=>points.push(node)};
+ const attrs={},icon={},points=[],state={dataset:{},title:'date',querySelector:selector=>selector==='img'?icon:null,setAttribute:(k,v)=>attrs[k]=v,prepend:node=>points.push(node)};
  const button={querySelector:()=>state,ownerDocument:{createElement:()=>({})}};
  const p=period(),r=waiting(),before=structuredClone(r);decorateEventErpBadge(button,r,{period:p},p,5000);
- assert.equal(state.dataset.sqEventErpStatus,'estimated');assert.match(icon.title,/Would earn approximately/);assert.match(points[0].textContent,/Estimated/);assert.deepEqual(r,before);
+ assert.equal(state.dataset.sqEventErpStatus,'estimated');assert.match(icon.title,/Would earn approximately/);assert.match(points[0].textContent,/^~[\d,]+ ERP$/);assert.deepEqual(r,before);
 });
 test('Kodub rows without an award put their explicit status beside the badge',()=>{
  const p=period('kodub'),awards=[],state={dataset:{},querySelector:()=>null,setAttribute(){},prepend(node){awards.push(node);}};

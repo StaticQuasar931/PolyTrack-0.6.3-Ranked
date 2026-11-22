@@ -550,9 +550,11 @@ test('malformed snapshot data remains fatal rather than reporting a deferral', a
 test('workflow reporting explicitly distinguishes complete from deferred and rejects invalid outcomes', async t => {
   const root = await fixture(t), env = {GITHUB_OUTPUT: path.join(root, 'output'), GITHUB_STEP_SUMMARY: path.join(root, 'summary')};
   const warnings = [];
-  await reportCaptureOutcome({deferred: true, published: false}, {env, log: value => warnings.push(value)});
+  await reportCaptureOutcome({deferred: true, published: false, reason:'Track account coverage regressed for '+'a'.repeat(64)+': 3 prior accounts missing; reviewed removal or replacement evidence required'}, {env, log: value => warnings.push(value)});
   assert.equal(await readFile(env.GITHUB_OUTPUT, 'utf8'), 'capture_status=deferred\n');
   assert.match(await readFile(env.GITHUB_STEP_SUMMARY, 'utf8'), /publication skipped/);
+  assert.match(await readFile(env.GITHUB_STEP_SUMMARY, 'utf8'), /omitted 3 previously published racers/);
+  assert.doesNotMatch(await readFile(env.GITHUB_STEP_SUMMARY, 'utf8'), /a{64}/);
   assert.match(warnings[0], /^::warning::/);
   await writeFile(env.GITHUB_OUTPUT, '');
   await reportCaptureOutcome({deferred: false}, {env, log: value => warnings.push(value)});

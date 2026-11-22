@@ -246,7 +246,8 @@ test('queue and publication regression gates run offline before verifier preflig
  assert.match(guard,/node --test --test-concurrency=2 tools\/verifier\/queue.test.mjs tools\/verifier\/publication-queue.test.mjs/);
  assert.match(guard,/tools\/verifier\/scheduled-drain.test.mjs tools\/verifier\/proof-cache-file.test.mjs/);
  for(const file of ['tools/cached-recording-verification.test.mjs','tools/client-pb-profile-followup.test.cjs','tools/offline-pb-analytics.test.cjs','workers/ranked/test/event-publication-checkpoints.test.js'])assert.ok(guard.includes(file));
- assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
+ assert.match(guard,/if: steps\.authority\.outputs\.skip != 'true' && steps\.authority\.outputs\.mode == 'firestore'/);
+ assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|secrets\./);
  assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
 });
 

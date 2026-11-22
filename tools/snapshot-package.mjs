@@ -276,13 +276,18 @@ async function archiveGeneration(sourceDirectory, historyDirectory, generation) 
   if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError('Published index exceeds file limit');
   const index = JSON.parse(indexBytes.toString('utf8'));
   const files = {};
-  for (const [logicalPath, item] of Object.entries(index.files)) {
-    const payloadName = path.basename(item.path);
-    if (payloadName !== item.path || !payloadName.endsWith('.bin')) throw new Error('Published index contains an unsafe payload name');
-    const bytes = await fs.readFile(path.join(sourceDirectory, payloadName));
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new RangeError(`${payloadName} exceeds file limit`);
-    if (sha256(bytes) !== item.sha256) throw new Error(`Published payload hash mismatch: ${logicalPath}`);
-    files[payloadName] = bytes.toString('base64');
+  const entries = Object.entries(index.files);
+  // Bound file handles but overlap disk I/O. Apply each batch in index order for stable archive bytes.
+  for (let offset = 0; offset < entries.length; offset += 16) {
+    const batch = await Promise.all(entries.slice(offset, offset + 16).map(async ([logicalPath, item]) => {
+      const payloadName = path.basename(item.path);
+      if (payloadName !== item.path || !payloadName.endsWith('.bin')) throw new Error('Published index contains an unsafe payload name');
+      const bytes = await fs.readFile(path.join(sourceDirectory, payloadName));
+      if (bytes.byteLength > MAX_FILE_BYTES) throw new RangeError(payloadName + ' exceeds file limit');
+      if (sha256(bytes) !== item.sha256) throw new Error('Published payload hash mismatch: ' + logicalPath);
+      return [payloadName, bytes.toString('base64')];
+    }));
+    for (const [name, encoded] of batch) files[name] = encoded;
   }
   let bootstrapIndex;
   try { bootstrapIndex = JSON.parse(await fs.readFile(path.join(sourceDirectory, 'bootstrap-index.json'), 'utf8')); }

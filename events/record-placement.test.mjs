@@ -93,7 +93,9 @@ test('complete field totals are proven, not inferred from loaded rows or racerCo
   assert.equal(eventOwnPlacementPresentation(place(partial)).text,'1/?');
   assert.equal(place({...partial,complete:undefined,totalEntries:undefined}).fieldSize,null);
   const pending={...full,pendingPlaybacks:[waiting(256,999)]};
-  assert.equal(eventOwnPlacementPresentation(place(pending,'all',256,999)).text,'1/256 (provisional)');
+  assert.equal(eventOwnPlacementPresentation(place(pending,'all',256,999)).text,'1/256');
   assert.equal(place(pending,'verified',256,999),null);
+  assert.match(eventOwnPlacementPresentation(place(pending,'all',256,999)).ariaLabel,/provisional/i);
+  assert.match(eventOwnPlacementPresentation(place(pending,'all',256,999)).className,/estimated/);
   assert.equal(eventOwnPlacementPresentation(place(pending,'verified')).text,'1/255');
 });

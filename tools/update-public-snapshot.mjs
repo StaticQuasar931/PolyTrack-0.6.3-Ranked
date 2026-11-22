@@ -474,7 +474,9 @@ export async function reportCaptureOutcome(result, {env = process.env, log = con
   if (result.deferred) {
     const message = 'Public capture deferred. Repository publication skipped; the prior published package and private retry ledger are retained. No immediate retry was started.';
     log('::warning::' + message);
-    if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY, '## Public capture deferred\n' + message + '\n');
+    const coverage = /^Track account coverage regressed for [a-f0-9]{64}: ([1-9][0-9]*) prior accounts missing; reviewed removal or replacement evidence required$/.exec(result.reason || '');
+    const detail = coverage ? ' A track source omitted ' + coverage[1] + ' previously published racers. Capture stopped before offline verification.' : '';
+    if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY, '## Public capture deferred\n' + message + detail + '\n');
   }
   return result;
 }

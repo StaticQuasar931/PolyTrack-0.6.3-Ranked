@@ -87,7 +87,7 @@ test('native replay parsing attaches only scoped recording objects and restores 
 
 test('new and legacy sticker positions and three sizes round-trip without changing legacy or another profile',async()=>{
  const {STICKER_POSITIONS,STICKER_SIZES,normalizeStickerLayout}=await import('./car-cosmetics-catalog.mjs');
- assert.equal(Object.keys(STICKER_POSITIONS).length,12);assert.equal(Object.keys(STICKER_SIZES).length,3);
+ assert.equal(Object.keys(STICKER_POSITIONS).length,14);assert.equal(Object.keys(STICKER_SIZES).length,3);
  const values=new Map(),s={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
  for(const position of Object.keys(STICKER_POSITIONS)){
   const stickerLayout={position,size:'large'};

@@ -21,7 +21,7 @@ export const carEntitlementKey=({category,id})=>({category:category==='rear'&&id
 export const carEarnedRequirement=query=>{const {category,id}=carEntitlementKey(query);return CAR_EARNED_REQUIREMENTS[category+':'+id]??null;};
 export const isFreeWorkshopChoice=query=>{const {category,id}=carEntitlementKey(query);return FREE_WORKSHOP_KEYS.includes(category+':'+id);};
 const groups={accessory:'accessories',finish:'finishes',emblem:'emblems',front:'fronts',rear:'rears',sticker:'stickers'};
-export const STICKER_SURFACES=freeze({center:'Top',left:'Left side',right:'Right side',front:'Front',rear:'Rear',under:'Underside'});
+export const STICKER_SURFACES=freeze({center:'Top','mid-body':'Center',left:'Left side',right:'Right side',front:'Front',rear:'Rear','rear-deck':'Flat rear',under:'Underside'});
 export const STICKER_POSITIONS=freeze({...STICKER_SURFACES,'nose-left':'Nose left','nose-center':'Nose center','nose-right':'Nose right','cockpit-left':'Cockpit left','cockpit-center':'Cockpit center','cockpit-right':'Cockpit right'});
 export const STICKER_SIZES=freeze({small:.5625,standard:1,large:1.92});
 export const normalizeRaceNumber=value=>Number.isInteger(value)&&value>=0&&value<=99?value:7;

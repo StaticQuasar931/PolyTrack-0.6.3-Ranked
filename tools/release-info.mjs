@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 452,
+  "number": 453,
   "version": "0.6.3",
-  "revision": 385,
+  "revision": 386,
   "notes": [
-    "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
-    "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
-    "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
+    "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
+    "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
   ],
-  "preparedAt": "2026-11-22T04:42:24.857Z",
-  "committedAt": "2026-11-22T04:43:38.000Z"
+  "preparedAt": "2026-11-22T19:42:42.876Z",
+  "committedAt": "2026-11-22T19:44:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
