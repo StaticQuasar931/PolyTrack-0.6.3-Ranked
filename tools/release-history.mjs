@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 464,
+    "number": 465,
     "version": "0.6.3",
-    "revision": 393,
+    "revision": 394,
     "notes": [
-      "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
+      "Ranking updates keep the last published track results visible while a newer board is being checked."
     ]
   },
   "entries": [
+    {
+      "number": 464,
+      "title": "Batch ranking snapshot reconciliation",
+      "commit": "434f0cca7422723fe96e9d69f2af955635729347",
+      "committedAt": "2026-11-22T21:30:13.000Z",
+      "notes": [
+        "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
+      ]
+    },
     {
       "number": 463,
       "title": "Prioritize required boards for ranking updates",
@@ -186,16 +195,6 @@ const historyData = {
       "notes": [
         "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
         "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
-      ]
-    },
-    {
-      "number": 440,
-      "title": "Apply current Workshop designs to archived event replays",
-      "commit": "813c160a698654289a1dbdcbd3d9f9d9485a25dc",
-      "committedAt": "2026-11-18T02:51:22.000Z",
-      "notes": [
-        "Your older event replays now show your current car paint, stickers, and accessories.",
-        "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
       ]
     }
   ],

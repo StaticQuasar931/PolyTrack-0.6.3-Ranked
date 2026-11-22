@@ -9,7 +9,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {aggregateServerAchievements, OWNER_PUBLIC_ID, SPECIAL_ROLLING_HILLS_TRACK_ID} from '../workers/ranked/src/server-achievements.js';
 import {publicOverallBackup, publicTrackBackup, publicEventBackup, publicTrackRegistry, chooseTrackFetches,
-  authenticatedOverallTrackBackup,
+  authenticatedOverallTrackBackup, isOlderTrackConfirmation,
   publicEventReplayBackup, runPublicSnapshotBackup, PUBLIC_SNAPSHOT_LIMITS,
   isReusableArchivedEventBackup, createAdminArchiveCaptureFetch, promotePublicEventPlayback} from './public-snapshot-backup.mjs';
 
@@ -32,6 +32,14 @@ function materializedTrack(count = 501) {
       totalEntries: count, complete: true},
     entries: Array.from({length: count}, (_, i) => ({accountId: (i + 1).toString(16).padStart(64, '0'), timeMs: 1000 + i}))};
 }
+
+test('older confirmations are eligible for exact published canonical cache reuse only',()=>{
+  const confirmation = {sha256:'b'.repeat(64),updatedAt:100};
+  assert.equal(isOlderTrackConfirmation(confirmation,101),true);
+  for (const point of [null,undefined,100,99,0,NaN]) assert.equal(isOlderTrackConfirmation(confirmation,point),false);
+  for (const change of [{sha256:'invalid'},{updatedAt:0},{updatedAt:'100'}])
+    assert.equal(isOlderTrackConfirmation({...confirmation,...change},101),false);
+});
 
 test('authenticated materialized pages normalize only the preview flag and preserve exactness without mutating input', () => {
   for (const count of [0, 5, 501, 10000]) {

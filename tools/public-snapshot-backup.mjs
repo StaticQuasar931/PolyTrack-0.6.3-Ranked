@@ -184,6 +184,12 @@ function hasCompleteTrackCoverage(board) {
     Array.isArray(board.entries) && (board.totalEntries === undefined || board.totalEntries === board.entries.length);
 }
 
+export function isOlderTrackConfirmation(confirmation, pinnedReadPoint) {
+  return Number.isSafeInteger(pinnedReadPoint) && pinnedReadPoint > 0 &&
+    TRACK_ID.test(confirmation?.sha256 || '') && Number.isSafeInteger(confirmation.updatedAt) &&
+    confirmation.updatedAt > 0 && confirmation.updatedAt < pinnedReadPoint;
+}
+
 export function olderCanonicalSubset(prior,incoming,readPoint) {
   if(!Number.isSafeInteger(readPoint)||!Number.isSafeInteger(incoming?.updatedAt)||incoming.updatedAt>=readPoint||
     !hasCompleteTrackCoverage(prior)||!hasCompleteTrackCoverage(incoming)||prior.trackId!==incoming.trackId||
@@ -1007,10 +1013,22 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const overlay = !!record.nativeLedgerOverlay || cached.entries.some(row=>row.nativeLedgerKey);
       let sourceDigest = overlay ? nativeTrackSourceDigest(record,cached,cachedBytes,previous.nativeVerificationLedger,nativeVerification) : null;
       if (!overlay) try {sourceDigest=publicTrackConfirmationDigest(projected,id);} catch { /* Legacy partial boards cannot confirm authenticated source coverage. */ }
-      if (overlay && !sourceDigest && !olderCanonicalTracks.has(id) && !retainedNativeBoardMatches({context:nativeVerification,authority:previous.nativeVerificationLedger,board:cached,bytes:cachedBytes})) throw Error('Cached native overlay source binding is not validated');
       const confirmation = confirmedTracks instanceof Map ? confirmedTracks.get(id) : null;
-      if (confirmation && TRACK_ID.test(confirmation.sha256||'') && sourceDigest && confirmation.sha256!==sourceDigest)
-        throw Error('Authenticated source confirmation changed');
+      const changedConfirmation = confirmation && TRACK_ID.test(confirmation.sha256||'') && sourceDigest && confirmation.sha256!==sourceDigest;
+      const proofPinned = !overlay || !!sourceDigest ||
+        retainedNativeBoardMatches({context:nativeVerification,authority:previous.nativeVerificationLedger,board:cached,bytes:cachedBytes});
+      if (changedConfirmation || !proofPinned) {
+        // Keep the exact last published canonical board as a baseline. It is
+        // eligible for a fresh read, not freshened by a different Worker view.
+        const pinned = !sourceRepairs.has(record.path) &&
+          publishedFullCanonicalReadPoint({context:nativeVerification,trackId:id,bytes:cachedBytes});
+        if (pinned) {
+          if (isOlderTrackConfirmation(confirmation,pinned)) olderCanonicalTracks.add(id);
+          continue;
+        }
+        if (changedConfirmation) throw Error('Authenticated source confirmation changed');
+        if (!olderCanonicalTracks.has(id)) throw Error('Cached native overlay source binding is not validated');
+      }
       if (confirmation && /^[a-f0-9]{64}$/.test(confirmation.sha256 || '') &&
           Number.isSafeInteger(confirmation.checkedAt) && confirmation.checkedAt > 0 && confirmation.checkedAt <= now &&
           confirmation.updatedAt === cached.updatedAt && cached.updatedAt <= confirmation.checkedAt &&
