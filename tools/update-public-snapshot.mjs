@@ -630,6 +630,12 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     await fs.writeFile(path.join(stagingDirectory,'public-export-summary.json'),JSON.stringify(summary)+'\n');
   }
 
+  if(!offline && authority==='snapshot-native' && capture===runPublicSnapshotBackup &&
+      env.GITHUB_EVENT_NAME==='workflow_dispatch' && replayDocumentLimit===1000 && !fullPublic){
+    const {deferMissingNormalReplayRows}=await import('./defer-missing-normal-replays.mjs');
+    log(JSON.stringify({missingNormalReplayRepair:await deferMissingNormalReplayRows({root:absoluteRoot,directory:stagingDirectory})}));
+  }
+
   if(canonicalRetention)log(JSON.stringify({canonicalRetention:canonicalRetention.report(),sharedReplayDocumentLimit:replayReadLimit}));
   let nativeVerification = null;
   if (reusePackagedOverlay) {

@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 466,
+  "number": 467,
   "version": "0.6.3",
-  "revision": 395,
+  "revision": 396,
   "notes": [
-    "New rankings can publish while unavailable replay previews wait for their own checks."
+    "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
   ],
-  "preparedAt": "2026-11-22T22:10:06.002Z",
-  "committedAt": "2026-11-22T22:10:08.000Z"
+  "preparedAt": "2026-11-22T22:30:32.020Z",
+  "committedAt": "2026-11-22T22:30:33.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

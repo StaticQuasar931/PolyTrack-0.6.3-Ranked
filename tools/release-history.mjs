@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 466,
+    "number": 467,
     "version": "0.6.3",
-    "revision": 395,
+    "revision": 396,
     "notes": [
-      "New rankings can publish while unavailable replay previews wait for their own checks."
+      "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
     ]
   },
   "entries": [
+    {
+      "number": 466,
+      "title": "Publish rankings while pending previews wait",
+      "commit": "5cd0a7e2f6a7d992d18e402d39d33706acf75acd",
+      "committedAt": "2026-11-22T22:10:08.000Z",
+      "notes": [
+        "New rankings can publish while unavailable replay previews wait for their own checks."
+      ]
+    },
     {
       "number": 465,
       "title": "Keep published ranking boards during refresh",
@@ -184,16 +193,6 @@ const historyData = {
       "notes": [
         "Equip two stickers in different spots and save them with Garage Save.",
         "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
-      ]
-    },
-    {
-      "number": 445,
-      "title": "Match the native Garage rail and streamline Style Shop",
-      "commit": "9eafec9a1fe63106cb753f9aae16cf68b57656de",
-      "committedAt": "2026-11-22T01:40:47.000Z",
-      "notes": [
-        "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
-        "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
       ]
     }
   ],
