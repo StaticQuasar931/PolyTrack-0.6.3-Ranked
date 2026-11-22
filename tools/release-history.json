@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 444,
+    "number": 445,
     "version": "0.6.3",
-    "revision": 377,
+    "revision": 378,
     "notes": [
-      "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
-      "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
+      "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
+      "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
     ]
   },
   "entries": [
+    {
+      "number": 444,
+      "title": "Improve Workshop controls and responsive Community Events",
+      "commit": "e259e45b738c9482af6a8d9517762091e346040f",
+      "committedAt": "2026-11-22T01:10:38.000Z",
+      "notes": [
+        "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
+        "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
+      ]
+    },
     {
       "number": 440,
       "title": "Apply current Workshop designs to archived event replays",
@@ -188,13 +198,6 @@
       "notes": [
         "Update history now matches the installed game version."
       ]
-    },
-    {
-      "number": null,
-      "title": "Synchronize generated release-history module",
-      "commit": "1bbcf1a9b6f7fb4a93186943c1a08c68f8186b5e",
-      "committedAt": "2026-11-16T05:24:27.000Z",
-      "notes": []
     }
   ],
   "coverage": {

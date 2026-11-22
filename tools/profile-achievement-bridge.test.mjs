@@ -297,9 +297,9 @@ test('bounded joined launcher preserves native profile paint but keeps hub and a
   assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'false');
   assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 51, 99)',image:'none'},'journal has an opaque neutral reading surface');
   const journalText=await page.locator('[data-aj-root]').innerText();
-  assert.doesNotMatch(journalText,/wallet|planned coins|reward points|proposal|credits earned/i);
-  assert.match(journalText,/Style Coins require an explicit Shop check and claim/);
-  assert.match(journalText,/Device observations do not award Style Coins/);
+  assert.doesNotMatch(journalText,/planned coins|reward points|proposal|credits earned/i);
+  assert.match(journalText,/Use Sync wallet in the Shop to collect eligible Style Coins/);
+  assert.match(journalText,/Device-only stats do not award coins/);
   assert.equal(await page.locator('[data-aj-root] [data-sp-action="claim"],[data-aj-root] [data-aj-claim]').count(),0);
   if(name==='phone'){
    const rail=await page.locator('.aj-paths button:visible').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {family:node.dataset.ajFamily,x:r.x,right:r.right,scrollFits:node.scrollWidth<=node.clientWidth};}));
@@ -396,8 +396,9 @@ test('owned hub close hook releases its top layer, restores Studio and never res
 test('shop destination keeps its place while a scoped callback loads',async t=>{
  const page=await pageFor(t);await nativeFixture(page);
  assert.equal(await page.locator('[data-ph-launch="shop"]').isVisible(),true);assert.equal(await page.locator('[data-ph-launch="shop"]').isDisabled(),true);
- await page.evaluate(()=>{window.shopOpens=0;const root=document.querySelector('#content');root.__profileShopOpen=()=>shopOpens++;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
- await page.locator('[data-ph-launch="shop"]').click();assert.equal(await page.evaluate(()=>shopOpens),1);
+ await page.evaluate(()=>{window.shopOpens=0;const root=document.querySelector('#content');root.__profileShopMount=new Promise(resolve=>{window.finishShopMount=()=>{root.__profileShopOpen=()=>shopOpens++;delete root.__profileShopMount;resolve();};});root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
+ const opener=page.locator('[data-ph-launch="shop"]');await opener.click();await opener.click();assert.equal(await opener.getAttribute('aria-busy'),'true');assert.equal(await page.evaluate(()=>shopOpens),0);
+ await page.evaluate(()=>finishShopMount());await page.waitForFunction(()=>shopOpens===1);assert.equal(await opener.getAttribute('aria-busy'),null);
  await page.evaluate(()=>cleanup.open('studio'));await page.locator('[data-ph-shop]').click();assert.equal(await page.evaluate(()=>shopOpens),2);
  assert.equal(await page.locator('.ph-tabbar').evaluate(node=>[...node.children].findIndex(e=>e.hasAttribute('data-ph-shop'))<[...node.children].findIndex(e=>e.classList.contains('ph-tab-hint'))),true);assert.equal(await page.locator('[data-ph-shop] svg[data-ph-icon=shop]').count(),1);
  await page.evaluate(()=>{const root=document.querySelector('#content');delete root.__profileShopOpen;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});

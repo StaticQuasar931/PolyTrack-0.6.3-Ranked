@@ -143,7 +143,7 @@ test('real mounted preview confirms once and rerenders only authoritative GET da
  {skip:!process.env.PLAYWRIGHT_MODULE,timeout:45000},async()=>{
  const {createRequire}=await import('node:module'),{createServer}=await import('node:http'),{readFile}=await import('node:fs/promises');
  const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE);
- const names=['workshop-sticker-shop-catalog.mjs','shop-controller.mjs','shop-session.mjs','shop-browser-lock.mjs','shop-preview.mjs','shop-preview.css','profile-shop-catalog.mjs','profile-shop-art.mjs'];
+ const names=['workshop-sticker-shop-catalog.mjs','shop-controller.mjs','shop-session.mjs','shop-browser-lock.mjs','shop-preview.mjs','shop-preview.css','profile-shop-catalog.mjs','profile-shop-art.mjs','profile-shop-expanded-designs.mjs','achievement-coin-schedule.mjs'];
  const sources=new Map(await Promise.all(names.map(async name=>['/'+name,await readFile(new URL(name,import.meta.url),'utf8')])));
  const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><link rel="stylesheet" href="/shop-preview.css"><main></main>');}
@@ -159,7 +159,7 @@ test('real mounted preview confirms once and rerenders only authoritative GET da
    const {createShopControllerStore,createShopController}=await import('/shop-controller.mjs'),{mountShopPreview}=await import('/shop-preview.mjs');
    const {PROFILE_SHOP_CATALOG}=await import('/profile-shop-catalog.mjs');const id='a'.repeat(64);globalThis.calls=[];globalThis.previews=[];globalThis.restores=0;
    const wallet={accountId:id,catalogVersion:2,balance:100,revision:0,inventoryComplete:true,ownedItemIds:[],equipRevision:0,equipped:null};
-   globalThis.store=createShopControllerStore({enabled:false,storage:localStorage,getAccountId:()=>id,getAuthScope:()=> 'offline-owner-generation1',makeRequestId:()=> 'browser-controller-request',transport:async req=>{
+   globalThis.store=createShopControllerStore({enabled:false,autoCollectRewards:false,storage:localStorage,getAccountId:()=>id,getAuthScope:()=> 'offline-owner-generation1',makeRequestId:()=> 'browser-controller-request',transport:async req=>{
     calls.push({path:req.path,method:req.method,body:req.body});
     if(req.method==='GET')return structuredClone(req.path.includes('catalog')?{version:2,items:[PROFILE_SHOP_CATALOG[0]]}:wallet);
     if(!localStorage.getItem('polytrack-shop-pending-v1:'+id))throw Error('missing durable request');

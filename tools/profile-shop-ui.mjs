@@ -31,6 +31,7 @@ let serial=0;
  * {applied:true,accountId,itemId,draftOnly:true} before UI reports it was applied.
  * Optional actions: onRefresh,onPreview,onRestorePreview,onStudio,onClose. getRacerName may read existing owner-scoped rendered data.
  * Parent owns authentication, explicit wallet synchronization and all server validation.
+ * getLastConfirmedBalance is an optional offline display hint, never a wallet.
  * Returns cleanup() with .update(nextOptions); late results cannot cross accounts.
  */
 export function mountProfileShopUi(root,options={}) {
@@ -42,6 +43,11 @@ export function mountProfileShopUi(root,options={}) {
   let earnOpen=doc.defaultView.matchMedia('(min-width:801px)').matches;
   const scoped=()=>typeof state.accountId==='string'&&state.accountId.length>0;
   const wallet=()=>scoped()&&state.cloudSaveConnected!==false&&state.wallet?.status==='confirmed'&&state.wallet.accountId===state.accountId&&uint(state.wallet.balance)&&uint(state.wallet.revision)?state.wallet:null;
+  const offlineBalance=()=>{
+    if(!scoped()||state.cloudSaveConnected===false)return null;
+    const cached=state.getLastConfirmedBalance?.();
+    return cached?.accountId===state.accountId&&uint(cached.balance)&&uint(cached.revision)?cached:null;
+  };
   const inventory=()=>scoped()&&state.cloudSaveConnected!==false&&state.inventory?.status==='confirmed'&&state.inventory.accountId===state.accountId&&Array.isArray(state.inventory.ownedIds)?state.inventory:null;
   const items=()=>{
     if(!Array.isArray(state.catalog)&&state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION)return [];
@@ -62,25 +68,31 @@ export function mountProfileShopUi(root,options={}) {
     state.loading||state.busy?'Synchronizing eligible rewards and confirmed balance...':
     'No confirmed balance yet. Sync wallet when you want to buy.';
   function restorePreview(){++previewGeneration;if(previewId){previewId=null;state.actions?.onRestorePreview?.();}}
+  function focusPreview(id){[...host.querySelectorAll('[data-sp-action="preview"]')].find(node=>node.dataset.spId===id)?.focus({preventScroll:true});}
   const racerName=()=>{try{return state.getRacerName?.()||'';}catch{return '';}};
   function render(focusKey) {
     const list=sortProfileShopItems(items(),sortMode,inventory()?.ownedIds??[]),balance=wallet(),pending=!!operation,selected=list.find(item=>item.id===confirmId);
+    const offline=!online(),displayBalance=balance||(offline?offlineBalance():null);
+    const historical=displayBalance&&(offline||pending||state.loading||state.busy);
+    const cloudStatus=offline?(displayBalance?'Offline. Saved balance is for reference only. Purchases are unavailable.':'Offline. No confirmed balance is saved for this racer and Cloud Save owner.'):
+      state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':historical?'Previous server confirmation; current balance is synchronizing.':
+      balance?'Confirmed by the server.':'Sync your wallet to check your confirmed balance.';
     host.innerHTML=`<header class="sp-head" ${state.embedded?'hidden':''}><div><p>PROFILE COLLECTION</p><h2 id="${prefix}-title">Style shop</h2></div>${state.actions?.onClose?'<button type="button" data-sp-action="close">Close</button>':''}</header>
       <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||balanceMessage(balance))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
-      <div class="sp-summary"><div><span>${balance&&(!online()||pending||state.loading||state.busy)?'Last confirmed balance':'Confirmed balance'}</span><strong>${balance?coinIcon+formatShopPoints(balance.balance)+' Style Coins':state.loading||state.busy?'Synchronizing...':'Not available'}</strong></div><p data-sp-cloud-status>${!online()?'Offline. Only previous confirmations are shown.':state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':balance&&(pending||state.loading||state.busy)?'Previous server confirmation; current balance is synchronizing.':balance?'Confirmed by the server.':'Sync your wallet to check your confirmed balance.'}</p></div>
+      <div class="sp-summary"><div><span>${historical?'Last confirmed balance':'Confirmed balance'}</span><strong>${displayBalance?coinIcon+formatShopPoints(displayBalance.balance)+' Style Coins':!offline&&(state.loading||state.busy)?'Synchronizing...':'Not available'}</strong></div><p data-sp-cloud-status>${cloudStatus}</p></div>
       ${state.communityCodeState?.saved===true?'<p class="sp-community-local" data-sp-community-local>'+ (state.communityCodeState.formatValid===true?'Saved Community code has a valid local format.':'Saved Community code format needs attention.')+' Cloud Save is separate. Membership is not verified.</p>':''}
       <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Rewards settle when you sync</small></summary><div class="sp-claim-body"><p>Sync your wallet to collect eligible daily and track rewards. The server checks eligibility and previous payouts. No claim button or estimated money.</p><p>Daily: 8 Style Coins. Recognized track milestones: 1 +20 / 5 +30 / 20 +50 / 35 +30 / 50 +40 / 70 +50 / 89 +60.</p>${state.achievementClaimsEnabled===true?'<p data-sp-achievement-policy>'+ACHIEVEMENT_COIN_SCHEDULE.length+' once-only cosmetic achievement bonuses, up to '+formatShopPoints(achievementMaximum)+' Style Coins. Shared title/style conditions pay once. Current server evidence only; not all historical goals are covered.</p>':''}${state.rewardSync==='unavailable'?'<p>Automatic reward synchronization is unavailable in this browser right now. Confirmed balance remains server-owned.</p>':''}</div></details>
       <p class="sp-note">Only the designs listed here can be bought with Style Coins. Other cosmetics are earned separately. Preview first; apply owned profile styles in Racer Studio and equip owned stickers in Garage.</p><label class="sp-sort">Sort designs <select data-sp-sort aria-label="Sort designs">${[['catalog','Catalog order'],['price','Price: low to high'],['name','Name'],['unowned','Not owned first']].map(([value,label])=>`<option value="${value}" ${sortMode===value?'selected':''}>${label}</option>`).join('')}</select></label><div class="sp-grid">${list.map(item=>{
-        const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
+        const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':!offline&&balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
         const slot=item.grants[0].slot;
         const swatch=sticker(item)?'<svg class="sp-sticker-swatch" viewBox="0 0 120 58"><path d="M18 13h15v9H18zm0 23h15v9H18zm67-23h16v9H85zm0 23h16v9H85z" fill="#0e1729"/><path d="M13 24 29 20 40 14h44l19 8 7 7-7 7-19 8H40l-11-6-16-4z" fill="#425c7c" stroke="#89a3bf"/><path d="M38 20h19l-4 18H38l-7-9z" fill="#172844"/><g transform="translate(65 13)">'+carStickerIcon(item.grants[0].value)+'</g></svg>':renderProfileShopSwatch(item.id,{name:racerName(),density:state.density==='low'?'low':'normal'});
-        const tryStyle=sticker(item)?'<span>'+(isOwned?'Equip':'Preview')+' in Garage &rsaquo; Workshop &rsaquo; Sticker</span>':`<button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>`;
+        const tryStyle=sticker(item)?'<span>'+(isOwned?'Equip':'Preview')+' in Garage &rsaquo; Workshop &rsaquo; Sticker</span>':`<button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" aria-label="Preview ${esc(item.label)}" aria-pressed="${previewId===item.id}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Previewing':'Try style'}</button>`;
         const applyStyle=sticker(item)?'':`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`;
         const kind={sticker:'WORKSHOP STICKER',theme:'COLOR THEME',baseSecondary:'SECONDARY COLOR',plate:'PLACE BLOCK',stage:'BACKDROP',stripe:'PATTERN',edge:'EDGE',nameFont:'NAME FONT',nameColor:'NAME COLOR'}[slot]||'PROFILE STYLE';
         return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch data-sp-item-preview="${esc(item.id)}">${swatch}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${coinIcon}${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions">${tryStyle}${isOwned?applyStyle:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
       }).join('')||'<p class="sp-empty">Profile styles are not available yet.</p>'}</div>
       ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Style Coins. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Style Coins':'not available'}.</p><p>Purchase adds this ${sticker(selected)?'Workshop sticker':'profile design'} to your collection. ${sticker(selected)?'Equip it separately in Garage.':'Applying is separate.'}</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
-      <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?'<button type="button" data-sp-action="reconcile">Check pending transaction</button>':''}${typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':'<p>Owned styles can be applied in Racer Studio.</p>'}<span>Style Coins are earned in-game. No real-money purchases.</span></footer>`;
+      <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?`<button type="button" data-sp-action="reconcile" ${offline?'disabled':''}>Check pending transaction</button>`:''}${!state.embedded&&typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':''}<span>Style Coins are earned in-game. No real-money purchases.</span></footer>`;
     // Only detached host snapshots are accepted; never move or mutate the live renderer.
     if(typeof state.renderCosmeticPreview==='function')for(const item of list){
       if(sticker(item))continue;
@@ -126,23 +138,28 @@ export function mountProfileShopUi(root,options={}) {
     else if(action==='cancel'){const id=confirmId;confirmId=null;message='Purchase cancelled.';restoreBuy(id);}
     else if(action==='confirm'){const selected=items().find(item=>item.id===confirmId);if(selected)void purchase(selected);}
     else if(action==='preview'&&item){
-      restorePreview();previewId=item.id;message='Selected for preview. Nothing purchased or equipped.';render();
-      [...host.querySelectorAll('[data-sp-action="preview"]')].find(node=>node.dataset.spId===item.id)?.focus({preventScroll:true});
+      const wasSelected=previewId===item.id;
+      restorePreview();
+      if(wasSelected){message='Preview closed.';render();focusPreview(item.id);return;}
+      previewId=item.id;message='Previewing '+item.label+'. Nothing purchased or applied.';render();focusPreview(item.id);
       const previewEpoch=epoch,previewToken=++previewGeneration;
-      try {Promise.resolve(state.actions.onPreview({...item})).catch(()=>{if(!disposed&&previewEpoch===epoch&&previewToken===previewGeneration){previewId=null;message='Preview unavailable. Nothing was purchased.';render();}});}catch{previewId=null;message='Preview unavailable. Nothing was purchased.';render();}
+      const failed=()=>{if(!disposed&&previewEpoch===epoch&&previewToken===previewGeneration){restorePreview();message='Preview unavailable. Nothing was purchased.';render();focusPreview(item.id);}};
+      try {Promise.resolve(state.actions.onPreview({...item})).catch(failed);}catch{failed();}
     }
     else if(action==='apply'&&item)void apply(item);
-    else if(action==='clear'){restorePreview();message='Preview closed.';render();}
-    else if(action==='reconcile'&&typeof state.actions?.onReconcile==='function')state.actions.onReconcile();
+    else if(action==='clear')cleanup.clearPreview();
+    else if(action==='reconcile'&&online()&&typeof state.actions?.onReconcile==='function')state.actions.onReconcile();
     else if(action==='studio'){restorePreview();state.actions?.onStudio?.({category:'profile'});}
     else if(action==='close'){restorePreview();state.actions?.onClose?.();}
   };
   const keydown=event=>{if(event.key==='Escape'&&confirmId){event.preventDefault();event.stopPropagation();const id=confirmId;confirmId=null;message='Purchase cancelled.';restoreBuy(id);}};
   const change=event=>{if(event.target.matches('[data-sp-sort]')&&['catalog','price','name','unowned'].includes(event.target.value)){sortMode=event.target.value;render();host.querySelector('[data-sp-sort]')?.focus({preventScroll:true});}};
   const toggle=event=>{if(event.target.matches('.sp-earn'))earnOpen=event.target.open;};
+  const connectionChanged=()=>{confirmId=null;render();};
+  doc.defaultView.addEventListener('offline',connectionChanged);doc.defaultView.addEventListener('online',connectionChanged);
   host.addEventListener('change',change);host.addEventListener('toggle',toggle,true);host.addEventListener('click',click);host.addEventListener('keydown',keydown);render();
-  function cleanup(){if(disposed)return;disposed=true;++epoch;restorePreview();host.removeEventListener('change',change);host.removeEventListener('toggle',toggle,true);host.removeEventListener('click',click);host.removeEventListener('keydown',keydown);host.remove();}
-  cleanup.clearPreview=()=>{if(disposed)return;restorePreview();message='Preview closed.';render();};
+  function cleanup(){if(disposed)return;disposed=true;++epoch;restorePreview();doc.defaultView.removeEventListener('offline',connectionChanged);doc.defaultView.removeEventListener('online',connectionChanged);host.removeEventListener('change',change);host.removeEventListener('toggle',toggle,true);host.removeEventListener('click',click);host.removeEventListener('keydown',keydown);host.remove();}
+  cleanup.clearPreview=()=>{if(disposed)return;const id=previewId;restorePreview();message='Preview closed.';render();focusPreview(id);};
   cleanup.update=next=>{if(disposed)return;++epoch;restorePreview();state={...state,...next};confirmId=null;operation=null;previewId=null;message='';render();};
   return cleanup;
 }
