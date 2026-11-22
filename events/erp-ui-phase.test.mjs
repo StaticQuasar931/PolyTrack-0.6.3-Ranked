@@ -37,6 +37,14 @@ test('badge ERP text is supplemental and cannot change verification classes or p
  const p=period(),r=waiting(),before=structuredClone(r);decorateEventErpBadge(button,r,{period:p},p,5000);
  assert.equal(state.dataset.sqEventErpStatus,'estimated');assert.match(icon.title,/Would earn approximately/);assert.match(points[0].textContent,/Estimated/);assert.deepEqual(r,before);
 });
+test('Kodub rows without an award put their explicit status beside the badge',()=>{
+ const p=period('kodub'),awards=[],state={dataset:{},querySelector:()=>null,setAttribute(){},prepend(node){awards.push(node);}};
+ const button={querySelector:()=>state,ownerDocument:{createElement:()=>({})}};
+ for(const [r,text] of [[waiting(),'ERP pending'],[waiting({unscored:true}),'Unscored'],[row(1,{rp:undefined}),'ERP unavailable'],[row(2,{reviewHold:true}),'ERP held']]){
+   const presentation=decorateEventErpBadge(button,r,{period:p},p,10001);
+   assert.equal(presentation.text,text);assert.equal(awards.at(-1).textContent,text);assert.equal(awards.at(-1).className,'sq-event-erp-caption');
+ }
+});
 test('Weekly labels use track names, never reset dates as names',()=>{
  assert.equal(eventPeriodDisplayName(period()),'Weekly Exact Track');
  assert.equal(eventPeriodDisplayName(period('weekly',{trackName:undefined,label:'Weekly 2026-11-14'}),()=>({name:'Catalog Track'})),'Weekly Catalog Track');

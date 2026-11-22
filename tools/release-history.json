@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 440,
+    "number": 444,
     "version": "0.6.3",
-    "revision": 376,
+    "revision": 377,
     "notes": [
-      "Your older event replays now show your current car paint, stickers, and accessories.",
-      "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
+      "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
+      "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
     ]
   },
   "entries": [
+    {
+      "number": 440,
+      "title": "Apply current Workshop designs to archived event replays",
+      "commit": "813c160a698654289a1dbdcbd3d9f9d9485a25dc",
+      "committedAt": "2026-11-18T02:51:22.000Z",
+      "notes": [
+        "Your older event replays now show your current car paint, stickers, and accessories.",
+        "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
+      ]
+    },
     {
       "number": 439,
       "title": "Improve Workshop placement and offline browsing",
@@ -185,15 +195,6 @@
       "commit": "1bbcf1a9b6f7fb4a93186943c1a08c68f8186b5e",
       "committedAt": "2026-11-16T05:24:27.000Z",
       "notes": []
-    },
-    {
-      "number": 416,
-      "title": "Sync release archive and test native Garage startup readiness",
-      "commit": "25342283b51390fa076d2b6cc88c592b5a48ba0b",
-      "committedAt": "2026-11-16T05:23:09.000Z",
-      "notes": [
-        "Earlier update notes now stay in sync with the current release."
-      ]
     }
   ],
   "coverage": {

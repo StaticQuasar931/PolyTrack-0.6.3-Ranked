@@ -71,7 +71,7 @@ test('purchase requires confirmation, cancel restores focus, and pending never d
 });
 test('balance and reward chores are absent; opening synchronization text does not invent money',async t=>{
  const page=await fixture(t);assert.equal(await page.locator('[data-sp-action="claim"],[data-sp-action="refresh"]').count(),0);
- assert.match(await page.locator('.sp-earn').innerText(),/synchronize automatically.*server checks/is);
+ assert.match(await page.locator('.sp-earn').innerText(),/sync your wallet.*server checks/is);
  assert.equal(await page.evaluate(()=>calls.claim.length+calls.refresh),0);
  await page.evaluate(()=>cleanup.update({wallet:{status:'unknown'},loading:true}));
  assert.equal(await page.locator('.sp-summary strong').innerText(),'Synchronizing...');

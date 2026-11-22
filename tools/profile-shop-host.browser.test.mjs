@@ -69,12 +69,13 @@ async function fixture(t,{enabled=true,width=390,height=844,owned=[],reusePage=n
  await page.evaluate(()=>actualShopSetup(document.querySelector('#content'),nativeEntry,true));await page.locator('.profile-shop-open').waitFor({state:'attached'});await page.evaluate(()=>actualShopReady());
  page.noExternal=()=>assert.equal(external,0);return page;
 }
-async function openShop(page){
+async function openShop(page,{sync=true}={}){
  if(!await page.locator('.profile-shop-open').isVisible())await page.evaluate(()=>cleanup.open('studio'));
  await page.locator('.profile-shop-open').click();
+ if(sync&&await page.locator('[data-shop-wallet-sync]').isVisible())await page.locator('[data-shop-wallet-sync]').click();
 }
 
-async function settleShop(page){await page.evaluate(()=>document.querySelector('#content').__shopCleanup.open());}
+async function settleShop(page){const sync=page.locator('[data-shop-wallet-sync]:visible');if(await sync.count())await page.waitForFunction(()=>!document.querySelector('[data-shop-wallet-sync]')?.disabled);}
 async function reopenShop(page){await page.evaluate(()=>document.querySelector('#content').__profileShopClose());await openShop(page);await settleShop(page);}
 async function installClock(page){await page.evaluate(()=>{const wall=Date.now(),mono=performance.now();window.shopElapsed=0;Object.defineProperty(Date,'now',{configurable:true,value:()=>wall+shopElapsed});Object.defineProperty(performance,'now',{configurable:true,value:()=>mono+shopElapsed});});}
 async function assertConfirmedBalance(page){assert.equal(await page.locator('.sp-summary strong').innerText(),await page.evaluate(()=>serverWallet.balance+' Style Coins'));}
@@ -99,7 +100,7 @@ test('all canonical locked Studio choices show their Style Coins price, never ra
  }
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
 });
-test('explicit Shop opening settles bounded eligible rewards before one authoritative wallet read; warm reopen is cached',async t=>{
+test('explicit wallet sync settles bounded eligible rewards before one authoritative wallet read; warm reopen is cached',async t=>{
  const page=await fixture(t);assert.equal(await page.evaluate(()=>network.length+authBootstrapCalls),0);await openShop(page);await settleShop(page);await assertConfirmedBalance(page);
  const first=await page.evaluate(()=>network);assert.equal(first.filter(r=>r.path==='/v1/currency/wallet').length,1);assert.equal(first.filter(r=>r.path==='/v1/shop/catalog').length,1);
  const posts=first.filter(r=>r.method==='POST');assert.deepEqual(posts.map(r=>r.body.rewardId),['login','milestones','achievements']);assert.equal(new Set(posts.map(r=>r.body.requestId)).size,3);assert.ok(first.every(r=>r.authorization==='Bearer offline-test-token'));
@@ -200,7 +201,7 @@ test('public original art preview works with wallet unavailable or gate OFF, wit
   const page=await fixture(t,{enabled,width:390,height:844});await page.evaluate(()=>walletUnavailable=true);
   if(!enabled)await page.evaluate(()=>fixtureAuth.emit(null));
   await openShop(page);await page.locator('.sp-item').first().waitFor();
-  if(enabled)await page.waitForFunction(()=>document.querySelector('.sp-host-gate')?.textContent.includes('could not be confirmed'));
+  if(enabled)await page.waitForFunction(()=>document.querySelector('.sp-host-gate')?.textContent.includes('Wallet unavailable'));
   assert.equal(await page.locator('[data-sp-action="buy"]:enabled,[data-sp-action="apply"]:enabled,[data-sp-action="claim"]:enabled').count(),0);
   const before=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),requests:network.length,tokens:tokenCalls,writes:draftWrites}));
   await page.locator('[data-sp-action="preview"]').first().click();await page.locator('[data-sp-live-clear]').waitFor();
@@ -428,44 +429,47 @@ async function authRestoreFixture(t,{existing=false,notify=false}={}){
  },{existing,notify});return page;
 }
 
-test('auth restore is explicit, coalesced, and finishes before the first scoped store load',async t=>{
- const page=await authRestoreFixture(t);assert.deepEqual(await page.evaluate(()=>({prepares:prepareCalls,network:network.length,dialogs:document.querySelectorAll('.profile-shop-dialog').length})),{prepares:0,network:0,dialogs:0});
- const pending=await page.evaluate(()=>{window.firstOpen=document.querySelector('#content').__shopCleanup.open();window.secondOpen=document.querySelector('#content').__shopCleanup.open();return {same:firstOpen===secondOpen,prepares:prepareCalls,network:network.length,dialogs:document.querySelectorAll('.profile-shop-dialog').length};});assert.deepEqual(pending,{same:true,prepares:1,network:0,dialogs:0});
- assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await firstOpen;}),true);
- assert.equal(await page.evaluate(()=>network.filter(row=>row.path==='/v1/currency/wallet').length),1);
- assert.equal(await page.evaluate(()=>network.filter(row=>row.path==='/v1/currency/claim').length),2);
- assert.doesNotMatch(await page.locator('.profile-shop-dialog').innerText(),/Connect Cloud Save|Sign in to check/);assert.equal(await page.evaluate(()=>dbCalls),0);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
+test('Shop opens and closes with no I/O, and wallet sync restores auth only on demand',async t=>{
+ const page=await authRestoreFixture(t);
+ await openShop(page,{sync:false});assert.equal(await page.locator('.profile-shop-dialog[open]').count(),1);
+ await page.keyboard.press('Escape');assert.equal(await page.locator('.profile-shop-dialog').count(),0);
+ assert.equal(await page.evaluate(()=>prepareCalls+network.length+tokenCalls+dbCalls),0);
+ await openShop(page,{sync:false});await page.locator('[data-shop-wallet-sync]').click();
+ assert.equal(await page.evaluate(()=>prepareCalls),1);assert.equal(await page.evaluate(()=>network.length),0);
+ await page.evaluate(()=>releaseAuthRestore());
+ await page.waitForFunction(()=>network.some(row=>row.path==='/v1/currency/wallet'));
+ await settleShop(page);assert.equal(await page.locator('.profile-shop-dialog[open]').count(),1);page.noExternal();
 });
 
 test('auth restore cannot reopen or load after account A-B-A, explicit close, or disposal',async t=>{
  for(const mode of ['account','close','dispose']){
-  const page=await authRestoreFixture(t);await page.evaluate(()=>{window.pendingOpen=document.querySelector('#content').__shopCleanup.open();});
+  const page=await authRestoreFixture(t);await page.evaluate(async()=>{await document.querySelector('#content').__shopCleanup.open();window.pendingOpen=document.querySelector('[data-shop-wallet-sync]').onclick();});
   await page.evaluate(({mode,A,B})=>{if(mode==='account'){restoringHost.noteAccountTransition(B);activeAccount=B;restoringHost.noteAccountTransition(A);activeAccount=A;}else if(mode==='close')document.querySelector('#content').__profileShopClose();else restoringHost.dispose();},{mode,A,B});
-  assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),false,mode);
+  assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),undefined,mode);
   assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0,mode);assert.equal(await page.locator('.profile-shop-dialog').count(),0);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
  }
 });
 
 test('auth restore opens on the first click when the parent notifies observeAuth before resolving',async t=>{
- const page=await authRestoreFixture(t,{notify:true});await page.evaluate(()=>{window.pendingOpen=document.querySelector('#content').__shopCleanup.open();});
- assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),true);
+ const page=await authRestoreFixture(t,{notify:true});await page.evaluate(async()=>{await document.querySelector('#content').__shopCleanup.open();window.pendingOpen=document.querySelector('[data-shop-wallet-sync]').onclick();});
+ assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),undefined);
  assert.equal(await page.locator('.profile-shop-dialog[open]').count(),1);assert.equal(await page.evaluate(()=>network.filter(row=>row.path==='/v1/currency/wallet').length),1);assert.equal(await page.evaluate(()=>dbCalls),0);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
 });
 
 test('auth restore permits the existing same-SDK null UID to initial owner callback only in the explicit scope',async t=>{
- const page=await authRestoreFixture(t,{existing:true,notify:true});await page.evaluate(()=>{window.pendingOpen=document.querySelector('#content').__shopCleanup.open();});
- assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),true);
+ const page=await authRestoreFixture(t,{existing:true,notify:true});await page.evaluate(async()=>{await document.querySelector('#content').__shopCleanup.open();window.pendingOpen=document.querySelector('[data-shop-wallet-sync]').onclick();});
+ assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),undefined);
  assert.equal(await page.locator('.profile-shop-dialog[open]').count(),1);assert.equal(await page.evaluate(()=>network.filter(row=>row.path==='/v1/currency/wallet').length),1);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
 });
 
 test('auth restore rejects owner UID A-B-A, SDK replacement, and callback reset followed by explicit close',async t=>{
  for(const mode of ['uid-aba','sdk','close-after-bootstrap']){
-  const page=await authRestoreFixture(t,{existing:true,notify:true});await page.evaluate(()=>{window.pendingOpen=document.querySelector('#content').__shopCleanup.open();});
+  const page=await authRestoreFixture(t,{existing:true,notify:true});await page.evaluate(async()=>{await document.querySelector('#content').__shopCleanup.open();window.pendingOpen=document.querySelector('[data-shop-wallet-sync]').onclick();});
   await page.evaluate(mode=>{
    if(mode==='uid-aba'){fixtureAuth.emit(fixtureUser);fixtureAuth.emit({...fixtureUser,uid:'other-owner'});fixtureAuth.emit(fixtureUser);}
    else if(mode==='sdk'){restoredAuth={currentUser:fixtureUser};restoringHost.observeAuth(restoredAuth);}
    else{fixtureAuth.emit(fixtureUser);document.querySelector('#content').__profileShopClose();}
   },mode);
-  assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),false,mode);assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0,mode);assert.equal(await page.locator('.profile-shop-dialog').count(),0);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
+  assert.equal(await page.evaluate(async()=>{releaseAuthRestore();return await pendingOpen;}),undefined,mode);assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0,mode);assert.equal(await page.locator('.profile-shop-dialog').count(),0);await page.evaluate(()=>restoringHost.dispose());page.noExternal();
  }
 });

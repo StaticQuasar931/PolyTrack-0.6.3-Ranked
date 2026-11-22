@@ -10,6 +10,8 @@ const box=(w,h,d,x=0,y=h/2,z=0)=>convex([[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]
 function cylinder(radius,height,y,segments){const p=[],f=[];for(const h of [y,y+height])for(let i=0;i<segments;i++)p.push([Math.cos(i/segments*Math.PI*2)*radius,h,Math.sin(i/segments*Math.PI*2)*radius]);p.push([0,y,0],[0,y+height,0]);for(let i=0;i<segments;i++){const n=(i+1)%segments;f.push([segments*2,i,n],[segments*2+1,n+segments,i+segments],[i,i+segments,n+segments],[i,n+segments,n]);}return convex(p,f);}
 const part=(positions,color,emissive=0,decal=false)=>Object.freeze({positions,color,emissive,decal,triangles:positions.length/9});
 const stickerShapes={
+ 'pit-arrow':[[0x10253b,[[4,12],[16,12],[16,6],[29,16],[16,26],[16,20],[4,20]]],[0xf5a94a,[[7,14],[19,14],[19,11],[25,16],[19,21],[19,18],[7,18]]]],
+ 'night-grid':[[0x152744,[[5,5],[27,5],[27,27],[5,27]]],[0x7df1da,[[9,9],[15,9],[15,15],[9,15]]],[0xe9f9ff,[[17,9],[23,9],[23,15],[17,15]]],[0xe9f9ff,[[9,17],[15,17],[15,23],[9,23]]],[0x7df1da,[[17,17],[23,17],[23,23],[17,23]]]],
  apex:[[0xe0f7ff,[[5,25],[12,7],[17,7],[10,25]]],[0x31d5ec,[[14,25],[21,7],[26,7],[19,25]]]],
  checker:[...[0,1,2,3,4,5,6,7].map(i=>{const x=4+i%4*6,y=10+Math.floor(i/4)*6;return [(i+Math.floor(i/4))%2?0x233451:0xf2f7ff,[[x,y],[x+6,y],[x+6,y+6],[x,y+6]]];})],
  bolt:[[0x191f38,[[12,4],[26,4],[20,13],[27,13],[9,29],[12,19],[5,19]]],[0xffd45e,[[13,6],[22,6],[16,15],[22,15],[12,24],[15,17],[8,17]]]],

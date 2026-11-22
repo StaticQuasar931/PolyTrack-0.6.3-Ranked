@@ -18,4 +18,19 @@
 .car-workshop-swatches [aria-pressed=true]{border-color:#a8f2ff;box-shadow:inset 2px 0 #7ee7ff}
 .car-sticker-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:8px;margin-top:10px}.car-sticker-layout label{min-width:0;font-size:13px}.car-sticker-layout select{display:block;width:100%;margin-top:3px}
 
-.car-workshop-active .customization-panel-ui>:not(.tab-bar){visibility:hidden;pointer-events:none}
+.car-workshop-active .customization-panel-ui>:not(.tab-bar,.car-cosmetic-workshop){visibility:hidden;pointer-events:none}
+
+.car-cosmetic-workshop{z-index:5;background:#172751;border:1px solid #6486b3;border-top:3px solid #83ddf4;padding:10px;box-shadow:0 8px 20px #09132980}
+.car-cosmetic-workshop header{padding-bottom:6px;border-bottom:1px solid #45618a}.car-cosmetic-workshop h2{font-size:21px}
+.car-cosmetic-workshop .car-workshop-choice[hidden],.car-sticker-layout select[hidden]{display:none!important}
+.car-workshop-swatches>button{grid-template-columns:32px minmax(0,1fr);min-height:46px;background:#233865}
+.car-sticker-layout{grid-template-columns:58px minmax(0,1fr);align-items:start;margin:4px 0 8px}
+.car-sticker-layout label{padding-top:6px;color:#b9d5ea}
+.car-sticker-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+.car-sticker-buttons button{min-height:30px;font-size:12px;padding:2px}
+.car-sticker-buttons.position button:first-child{grid-column:1/-1}
+.car-sticker-buttons.position button:nth-child(2)::before,.car-sticker-buttons.position button:nth-child(5)::before{display:block;font-size:10px;color:#b7d7eb}
+.car-sticker-buttons.position button:nth-child(2)::before{content:'Nose'}.car-sticker-buttons.position button:nth-child(5)::before{content:'Cockpit'}
+.car-sticker-buttons button[aria-pressed=true]{background:#396387;border-color:#a3ecff;box-shadow:inset 0 -2px #7ee7ff}
+
+.car-workshop-native-slot{position:relative}.car-cosmetic-workshop{position:absolute;transform-origin:right bottom}

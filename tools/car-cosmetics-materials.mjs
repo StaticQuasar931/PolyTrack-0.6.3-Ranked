@@ -1,5 +1,5 @@
-import {CAR_COSMETIC_CATALOG,normalizeCarSelection,normalizeStickerLayout,STICKER_SIZES} from './car-cosmetics-catalog.mjs';
-import {carAttachmentFrames,carAttachmentParts} from './car-cosmetics-geometry.mjs';
+const {CAR_COSMETIC_CATALOG,normalizeCarSelection,normalizeStickerLayout,STICKER_SIZES}=await import(new URL('./car-cosmetics-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {carAttachmentFrames,carAttachmentParts}=await import(new URL('./car-cosmetics-geometry.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const bodyFor=cap=>{const meshes=[];cap.chassis.traverse(node=>{if(node.name==='Body'&&node.geometry?.attributes?.position)meshes.push(node);});if(meshes.length!==1)throw Error('Exact native Body mesh is unavailable');return meshes[0];};
 export function inspectCarBody(cap){const body=bodyFor(cap),positions=body.geometry.getAttribute('position');body.updateWorldMatrix(true,false);cap.chassis.updateWorldMatrix(true,false);const m=cap.chassis.matrixWorld.clone().invert().multiply(body.matrixWorld).elements,vertices=new Float32Array(positions.count*3);for(let i=0;i<positions.count;i++){const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);vertices.set([m[0]*x+m[4]*y+m[8]*z+m[12],m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14]],i*3);}return {body,frames:carAttachmentFrames(vertices,body.geometry.index?.array)};}
 export function createNativeCarAppearance(cap,selection,density='low'){

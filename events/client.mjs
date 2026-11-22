@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=376';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=376';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=377';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=377';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=376';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=376';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=376';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=377';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=377';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=377';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -663,10 +663,10 @@ export function decorateEventErpBadge(button,row,board,period,at=Date.now()){
   const title=eventVerificationLabel(row,!eventRowVerified(row))+'. '+presentation.title;
   state.title=title;state.setAttribute('aria-label',title);
   const icon=state.querySelector('img');if(icon)icon.title=title;
-  if(presentation.status==='awarded'||presentation.estimated){
+  {
     const doc=button.ownerDocument||state.ownerDocument;if(!doc)return presentation;
     const points=doc.createElement('span');points.className=presentation.estimated?'sq-event-estimated-rp':'sq-event-earned-rp';
-    points.textContent=presentation.text;points.title=presentation.title;state.prepend(points);
+    points.textContent=presentation.text;points.title=presentation.title;state.querySelector('.sq-event-earned-rp,.sq-event-estimated-rp,.sq-event-erp-caption')?.remove?.();if(presentation.status!=='awarded'&&!presentation.estimated)points.className='sq-event-erp-caption';state.prepend(points);
   }
   return presentation;
 }
