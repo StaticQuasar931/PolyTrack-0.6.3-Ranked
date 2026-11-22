@@ -356,7 +356,8 @@ export function createRankedDataStorage({storage, indexedDB = globalThis.indexed
     try { persistence?.close?.(); } catch {}
   }
 
-  return {getItem, setItem, removeItem, ready, flush, status, close};
+  const cacheKeys = () => [...values].filter(([,value]) => value !== TOMBSTONE).map(([key]) => key);
+  return {getItem, setItem, removeItem, cacheKeys, ready, flush, status, close};
 }
 
 export function createMemoryRankedDataPersistence(initialRows = []) {

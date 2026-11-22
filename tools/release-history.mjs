@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 448,
+    "number": 449,
     "version": "0.6.3",
-    "revision": 381,
+    "revision": 382,
     "notes": [
-      "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
-      "The car stays in view beside the Workshop, including on narrow screens."
+      "See real part previews in the Workshop and place larger stickers, including a custom race number, on more sides of the car.",
+      "Try new paint finishes and fitted parts. Podium crowns match your best confirmed medal.",
+      "Event personal bests can recover from a full browser cache without removing pending runs or saved replays."
     ]
   },
   "entries": [
+    {
+      "number": 448,
+      "title": "Make the Garage Workshop easier to use",
+      "commit": "2cdbd33e91ff9a1f46d7b6ff90652374b7a8ef60",
+      "committedAt": "2026-11-22T03:00:28.000Z",
+      "notes": [
+        "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
+        "The car stays in view beside the Workshop, including on narrow screens."
+      ]
+    },
     {
       "number": 447,
       "title": "Update garage layers independently and streamline Shop sync",
@@ -190,15 +201,6 @@ const historyData = {
       "committedAt": "2026-11-16T06:37:53.000Z",
       "notes": [
         "The Kodub weekly card has balanced spacing and clearer groups for track details, timing and rewards."
-      ]
-    },
-    {
-      "number": 421,
-      "title": "Restore wider Kodub card and verify text fits",
-      "commit": "4c13ab627886bae81aa696722743004506ec6648",
-      "committedAt": "2026-11-16T06:12:34.000Z",
-      "notes": [
-        "Restored the wider Kodub weekly card so the title and event details have room to fit."
       ]
     }
   ],

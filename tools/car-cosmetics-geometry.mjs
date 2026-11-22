@@ -22,11 +22,19 @@ const stickerShapes={
  ridge:[[0x223a6a,[[3,24],[12,8],[17,16],[21,10],[29,24]]],[0xfcf1d0,[[8,15],[12,8],[16,15],[12,13]]]],
  'solar-flare':[[0x512028,[[16,3],[25,7],[29,16],[25,25],[16,29],[7,25],[3,16],[7,7]]],[0xff9044,[[16,6],[22,10],[26,16],[22,22],[16,26],[10,22],[6,16],[10,10]]],[0xfff1c7,[[17,8],[19,14],[25,16],[18,18],[15,24],[14,18],[8,16],[14,14]]]],
  'tide-mark':[[0x163855,[[4,9],[14,4],[28,9],[28,21],[18,28],[4,23]]],[0x4ce0c2,[[5,15],[13,9],[18,9],[27,15],[19,14],[13,17],[5,21]]],[0xe4fbf7,[[10,23],[18,17],[22,16],[27,18],[22,20],[18,24]]]],
+ 'hazard-band':[[0x17223a,[[3,8],[29,8],[29,24],[3,24]]],[0xffcb62,[[5,22],[13,10],[18,10],[10,22]]],[0xffcb62,[[13,22],[21,10],[26,10],[18,22]]]],
+ 'vector-wing':[[0x17314d,[[4,8],[28,8],[28,17],[16,25],[4,17]]],[0x9beaff,[[6,11],[14,15],[16,20],[9,17]]],[0xf2faff,[[26,11],[18,15],[16,20],[23,17]]]],
  laurel:[[0xecd28a,[[15,25],[8,22],[4,14],[5,6],[9,16],[15,22]]],[0xecd28a,[[17,25],[24,22],[28,14],[27,6],[23,16],[17,22]]],[0xf7e7b6,[[16,5],[21,12],[16,19],[11,12]]]]
 };
-export function carStickerIcon(id){return (stickerShapes[id]||[]).map(([color,points])=>'<polygon fill="#'+color.toString(16).padStart(6,'0')+'" stroke="none" points="'+points.map(p=>p.join(',')).join(' ')+'"/>').join('');}
-export function carAttachmentParts(category,id,density='low'){
- const key=category+':'+id+':'+density;if(cache.has(key))return cache.get(key);if(!['low','medium','high'].includes(density))throw Error('Invalid visual density');
+const digits=['abcedf','bc','abged','abgcd','fgbc','afgcd','afgecd','abc','abcdefg','abfgcd'];
+const segments={a:[0,0,7,1.6],b:[5.4,1.8,1.6,4],c:[5.4,7,1.6,4],d:[0,11.2,7,1.6],e:[0,7,1.6,4],f:[0,1.8,1.6,4],g:[0,5.8,7,1.4]};
+const safeNumber=n=>Number.isInteger(n)&&n>=0&&n<=99?n:7;
+function raceNumberShapes(value){const text=String(safeNumber(value));const backing=[0x162340,[[5,7],[27,7],[29,10],[29,22],[26,25],[5,25],[3,22],[3,10]]];return [backing,...[...text].flatMap((d,i)=>[...digits[Number(d)]].map(id=>{const [dx,dy,w,h]=segments[id],x=(text.length===1?12.5:7.5+i*10)+dx,y=9.6+dy;return [0xf6fbff,[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]];}))];}
+const shapesFor=(id,number)=>id==='race-number'?raceNumberShapes(number):stickerShapes[id];
+export function carStickerIcon(id,number){return (shapesFor(id,number)||[]).map(([color,points])=>'<polygon fill="#'+color.toString(16).padStart(6,'0')+'" stroke="none" points="'+points.map(p=>p.join(',')).join(' ')+'"/>').join('');}
+export function carAttachmentParts(category,id,density='low',variant){
+ const number=id==='race-number'?safeNumber(variant):null,tier=id==='crown'&&['silver','bronze'].includes(variant)?variant:'gold';
+ const key=category+':'+id+':'+density+':'+(number??tier);if(cache.has(key))return cache.get(key);if(!['low','medium','high'].includes(density))throw Error('Invalid visual density');
  const dark=0x243545,metal=0xb5ccd3,cyan=0x7ee7ff,gold=0xe5b862,parts=[];const add=(g,c,e=0,decal=false)=>parts.push(part(g,c,e,decal));
  if(id==='none')return [];
  if(category==='accessory'){
@@ -34,14 +42,15 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='beacon'){add(box(.16,.025,.16),dark);add(cylinder(.065,.105,.025,density==='low'?6:density==='medium'?8:12),0xffba59,.38);add(box(.06,.012,.06,0,.136),metal);}
   else if(id==='aerial'){add(box(.065,.02,.065),dark);add(box(.012,.27,.012,0,.155),metal);add(box(.023,.025,.023,0,.3),cyan);}
   else if(id==='roofbox'){for(const x of [-.1,.1])for(const z of [-.15,.15])add(box(.035,.028,.045,x,.014,z),dark);add(box(.29,.115,.43,0,.085),0x7296ad);add(box(.28,.016,.42,0,.15),metal);}
-  else if(id==='crown'){for(const x of [-.13,.13])add(box(.03,.035,.22,x),gold);for(const z of [-.1,.1])add(box(.28,.035,.03,0,.0175,z),gold);for(const x of [-.1,0,.1])add(box(.035,x===0?.16:.12,.035,x,.035+(x===0?.16:.12)/2,.1),gold);}
+  else if(id==='crown'){const color=tier==='silver'?0xc6d8e7:tier==='bronze'?0xc38659:gold,points=tier==='silver'?[.09,.145,.09]:tier==='bronze'?[.10,.115,.10]:[.12,.16,.12];for(const x of [-.13,.13])add(box(.03,.035,.22,x),color);for(const z of [-.1,.1])add(box(.28,.035,.03,0,.0175,z),color);for(const [i,x] of [-.1,0,.1].entries())add(box(.035,points[i],.035,x,.035+points[i]/2,.1),color);}
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else if(id==='roof-vent'){add(box(.124,.025,.16),dark);for(const z of [-.044,0,.044])add(box(.11,.021,.018,0,.025,z),0x93adbd);}
+  else if(id==='intake'){add(box(.24,.035,.23),dark);for(const x of [-.08,.08])add(box(.052,.08,.19,x,.064),metal);add(box(.21,.025,.19,0,.115),cyan);}
   else throw Error('Unknown roof visual');
  }else if(category==='sticker'){
-  const shapes=stickerShapes[id];if(!shapes)throw Error('Unknown sticker');
+  const shapes=shapesFor(id,number),digitsOut=[];if(!shapes)throw Error('Unknown sticker');
   for(const [layer,[color,points]] of shapes.entries()){
-   const y=.002+layer*.0001,vertices=points.map(([x,z])=>[(x-16)/136,y,(z-16)/136]),out=[];
+   const y=.002+(number===null?layer:Math.min(layer,1))*.0001,vertices=points.map(([x,z])=>[(x-16)/136,y,(z-16)/136]),out=[];
    // Fan triangulation is only used for convex shapes; concave stickers use an SVG-style outline triangulated below.
    const remaining=vertices.map((_,i)=>i),cross=(a,b,c)=>(b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]);
    const sign=Math.sign(vertices.reduce((n,a,i)=>{const b=vertices[(i+1)%vertices.length];return n+a[0]*b[2]-a[2]*b[0];},0));
@@ -49,13 +58,15 @@ export function carAttachmentParts(category,id,density='low'){
     if(cross(a,b,c)*sign<=0||remaining.some(j=>{const p=vertices[j];return p!==a&&p!==b&&p!==c&&[cross(a,b,p),cross(b,c,p),cross(c,a,p)].every(v=>v*sign>=0);}))continue;
     out.push(...a,...(sign>0?c:b),...(sign>0?b:c));remaining.splice(i,1);found=true;break;
    }if(!found)throw Error('Invalid sticker polygon');}
-   add(new Float32Array(out),color,0,true);
+   if(number!==null&&layer>0)digitsOut.push(...out);else add(new Float32Array(out),color,0,true);
   }
+  if(digitsOut.length)add(new Float32Array(digitsOut),0xf6fbff,0,true);
  }else if(category==='emblem'){
   if(id==='crest'){for(const [w,d,y,color]of [[.045,.06,.002,dark],[.032,.047,.0025,gold]])add(new Float32Array([0,y,-d,-w,y,0,0,y,d,0,y,-d,0,y,d,w,y,0]),color,0,true);}
   else if(id==='grid-mark'){add(box(.115,.095,.012,0,-.0475,.006),dark);for(const x of [-.027,.027])add(box(.025,.052,.008,x,-.026,.015),cyan);}
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
+  else if(id==='shield'){add(box(.123,.105,.014,0,-.016,.008),dark);add(box(.09,.072,.01,0,-.011,.018),metal);add(box(.046,.042,.01,0,-.014,.026),cyan);}
   else throw Error('Unknown nose emblem');
  }else if(category==='front'){
   if(id==='rearbar'){add(box(.36,.045,.025,0,0,.0125),dark);add(box(.3,.016,.012,0,0,.031),cyan,.2);}
@@ -63,9 +74,12 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='lamps'){add(box(.4,.025,.025,0,0,.0125),dark);for(const x of [-.14,.14])add(box(.07,.07,.04,x,.018,.035),0xffe7a5,.3);}
   else if(id==='tow-plate'){add(box(.16,.038,.026,0,-.010,.012),dark);add(box(.072,.021,.012,0,-.004,.029),gold);}
   else if(id==='fog-lamp'){add(box(.128,.035,.027,0,-.013,.014),dark);add(box(.09,.019,.012,0,-.005,.031),0xfc443b,.28);}
+  else if(id==='canards'){for(const x of [-.17,.17]){add(box(.13,.023,.09,x,-.007,.043),dark);add(box(.029,.052,.071,x*1.21,.018,.046),metal);}}
+  else if(id==='tail-lights'){for(const x of [-.09,.09]){add(box(.107,.035,.025,x,-.012,.013),dark);add(box(.076,.015,.01,x,-.009,.029),0xff523f,.28);}}
   else throw Error('Unknown front accessory');
  }else throw Error('Unknown attachment category');
- const result=Object.freeze(parts);cache.set(key,result);return result;
+ const result=Object.freeze(parts);if(number!==null){const numeric=[...cache.keys()].filter(item=>item.startsWith('sticker:race-number:'));if(numeric.length>=24)cache.delete(numeric[0]);}
+ cache.set(key,result);return result;
 }
 export function carAttachmentFrames(positions,indices){
  if(!positions?.length||positions.length%3)throw Error('Invalid native body vertices');
@@ -82,5 +96,15 @@ export function carAttachmentFrames(positions,indices){
  const roof=centerline(f=>f.normal[1]>.65&&f.center[1]>=min[1]+(max[1]-min[1])*.55);if(!roof)throw Error('No centered native roof surface');
  const hood=centerline(f=>f.normal[1]>.65&&f.center[2]>(min[2]+max[2])/2+(max[2]-min[2])*.12);
  const rearFaces=faces.filter(f=>f.normal[2]<-.7&&f.center[1]>min[1]+(max[1]-min[1])*.4);let rear=null;if(rearFaces.length){const f=rearFaces.sort((a,b)=>a.center[2]-b.center[2])[0];rear={point:[centerX,f.center[1],f.center[2]],normal:[...f.normal],width:Math.max(...f.p.map(p=>p[0]))-Math.min(...f.p.map(p=>p[0]))};}
- return Object.freeze({bounds:{min,max},roof,hood,rear,front:frame(2,f=>f.normal[2]>.55&&f.center[2]>=max[2]-(max[2]-min[2])*.15)});
+ const decalFrames={};for(const [id,axis,sign] of [['left',0,-1],['right',0,1],['front',2,1],['rear',2,-1],['under',1,-1]]){
+  const matching=faces.filter(f=>f.normal[axis]*sign>.8).sort((a,b)=>b.area-a.area);if(!matching.length)continue;
+  const top=matching[0],n=top.normal,dot=(a,b)=>a.reduce((sum,x,i)=>sum+x*b[i],0);
+  const coplanar=matching.filter(f=>dot(n,f.normal)>.999&&Math.abs(dot(n,f.p[0].map((x,i)=>x-top.p[0][i])))<.002);
+  const a=coplanar.reduce((sum,f)=>sum+f.area,0),point=top.center.map((_,i)=>coplanar.reduce((sum,f)=>sum+f.center[i]*f.area,0)/a);
+  const horizontal=Math.hypot(n[0],n[2]),right=horizontal>.15?[n[2]/horizontal,0,-n[0]/horizontal]:[1,0,0];
+  const along=[right[1]*n[2]-right[2]*n[1],right[2]*n[0]-right[0]*n[2],right[0]*n[1]-right[1]*n[0]],vertices=coplanar.flatMap(f=>f.p);
+  const extent=v=>{const projected=vertices.map(p=>dot(v,p.map((x,i)=>x-point[i])));return 2*Math.min(-Math.min(...projected),Math.max(...projected));};
+  decalFrames[id]={point,normal:n,right,along,width:extent(right),depth:extent(along)};
+ }
+ return Object.freeze({bounds:{min,max},roof,hood,rear,decalFrames,front:frame(2,f=>f.normal[2]>.55&&f.center[2]>=max[2]-(max[2]-min[2])*.15)});
 }
