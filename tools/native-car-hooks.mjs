@@ -9,7 +9,7 @@ export function replayOwnerScope(rows){
  return owners;
 }
 // External visual hooks only. The stock game and verifier-pinned bundles stay unchanged.
-export function installNativeCarHooks({window,require:load,runtime}={}){
+export function installNativeCarHooks({window,require:load,runtime,getAccountId}={}){
   if(window?.__polytrackNativeCarVisualHooks)return window.__polytrackNativeCarVisualHooks;
   if(!window?.document||typeof load!=='function'||!runtime)throw TypeError('Native visual host required');
   const document=window.document,Car=load(641).A,Renderer=load(1507).A,Profile=load(2522).A,threeModule=load(4922);
@@ -19,7 +19,7 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   }
   const metrics={styleWrites:0,saveEvents:0,authorizedSaves:0};
   const matrixOwners=new WeakMap(),renderers=new WeakSet(),parked=new WeakSet(),candidates=new Map(),restores=[];
-  const replayOwners=new WeakMap(),replayCars=new WeakSet();let responseOwners=null;
+  const replayOwners=new WeakMap(),replayCars=new WeakSet();let responseOwners=null, localReplay=null;
   let saveIntent=null,profileStore=null,boundRoot=null,queued=false,dead=false,lastToken=null,identityChanged=false;
   const safe=fn=>{try{return fn();}catch{return null;}};
   const wrap=(target,key,after)=>{
@@ -53,7 +53,30 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
       },save:()=>{}});
   }
   const Recording=load(1754).A;
-  wrap(Recording,'deserialize',(_type,args,recording)=>{const owner=responseOwners?.get(args[0]);if(owner&&recording)replayOwners.set(recording,owner);});
+  const scopeLocalReplay = event => {
+    const button = event.target?.closest?.('.track-info-ui .side-panel button.watch,.track-info-ui .side-panel button.play');
+    const trackId = button?.closest('.track-info-ui')?.__pt062EventWatch?.trackId;
+    if (!/^[a-f0-9]{64}$/.test(trackId || '')) return;
+    const scope = {trackId};
+    localReplay = scope;
+    // Browsers can flush microtasks between listeners of the same click.
+    window.setTimeout(() => {if (localReplay === scope) localReplay = null;},0);
+  };
+  function localReplayOwner(bytes) {
+    if (!localReplay || !profileStore) return null;
+    const owner = safe(getAccountId);
+    const slot = profileStore.profileSlot, tokenHash = safe(() => profileStore.getCurrentUserProfile().tokenHash);
+    if (!/^[a-f0-9]{64}$/.test(owner || '') || !Number.isSafeInteger(slot) || slot < 0 || !tokenHash) return null;
+    for (const mode of ['default','undeterministic']) {
+      const row = safe(() => JSON.parse(window.localStorage.getItem('polytrack_v5_prod_record_'+slot+'_'+mode+'_'+localReplay.trackId)));
+      if (row?.tokenHash === tokenHash && row.recording === bytes) return owner;
+    }
+    return null;
+  }
+  wrap(Recording,'deserialize',(_type,args,recording)=>{
+    const owner = responseOwners ? responseOwners.get(args[0]) : localReplayOwner(args[0]);
+    if(owner&&recording)replayOwners.set(recording,owner);
+  });
   wrap(Renderer.prototype,'addMaterial',renderer=>register(renderer));
   wrap(Car.prototype,'setCarStyle',car=>{const recording=car.getRecording(),owner=preparedEventReplayOwner(recording)??replayOwners.get(recording),entry=owner&&exact(car);if(entry&&!replayCars.has(car)){
       replayCars.add(car);parked.add(car);runtime.created({car,chassis:entry.node,renderer:entry.renderer,three,replayOwner:owner,getReplayStyle:()=>profileStore?.getCurrentUserProfile()?.carStyle});
@@ -78,8 +101,9 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
     saveIntent=intent;
     if(!confirmed)window.queueMicrotask(()=>{if(saveIntent===intent)saveIntent=null;});
   };
+  document.addEventListener('click',scopeLocalReplay,true);
   document.addEventListener('click',explicitSave,true);document.addEventListener('keydown',explicitSave,true);
   const observer=new window.MutationObserver(schedule);observer.observe(document.body,{childList:true,subtree:true});
-  const api=Object.freeze({withReplayOwners(rows,callback){const prior=responseOwners;responseOwners=replayOwnerScope(rows);try{return callback();}finally{responseOwners=prior;}},stats:()=>({...metrics}),dispose(){if(dead)return;dead=true;observer.disconnect();document.removeEventListener('click',explicitSave,true);document.removeEventListener('keydown',explicitSave,true);if(boundRoot)runtime.close(boundRoot);for(const restore of restores.reverse())restore();candidates.clear();profileStore=null;lastToken=null;if(window.__polytrackNativeCarVisualHooks===api)delete window.__polytrackNativeCarVisualHooks;}});
+  const api=Object.freeze({withReplayOwners(rows,callback){const prior=responseOwners;responseOwners=replayOwnerScope(rows);try{return callback();}finally{responseOwners=prior;}},stats:()=>({...metrics}),dispose(){if(dead)return;dead=true;observer.disconnect();document.removeEventListener('click',scopeLocalReplay,true);document.removeEventListener('click',explicitSave,true);document.removeEventListener('keydown',explicitSave,true);if(boundRoot)runtime.close(boundRoot);for(const restore of restores.reverse())restore();candidates.clear();profileStore=null;lastToken=null;if(window.__polytrackNativeCarVisualHooks===api)delete window.__polytrackNativeCarVisualHooks;}});
   window.__polytrackNativeCarVisualHooks=api;return api;
 }

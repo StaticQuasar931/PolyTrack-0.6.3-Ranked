@@ -134,3 +134,31 @@ test('race numbers have distinct art and two low-cost meshes and crowns have thr
  assert.equal(carAttachmentParts('sticker','race-number','low',Infinity),carAttachmentParts('sticker','race-number','low',7));
  assert.equal(new Set(['gold','silver','bronze'].map(tier=>carAttachmentParts('accessory','crown','low',tier)[0].color)).size,3);
 });
+
+test('stock Watch binds a saved PB to the matching active profile only during its native click', async()=>{
+ const {installNativeCarHooks}=await import('./native-car-hooks.mjs');
+ const trackId='f'.repeat(64),storage=new Map(),listeners=new Map(),seen=[],canvas={};
+ class Recording{static deserialize(bytes){return {bytes};}}
+ class Renderer{addMaterial(){}}
+ class Car{setCarStyle(){}setVisible(){}addFinishCallback(){}dispose(){}getChassisMatrix(){return this.matrix;}getRecording(){return this.recording;}}
+ class Profile{profileSlot=2;getCurrentUserProfile(){return {token:'active',tokenHash:'native-profile'};}setCarStyle(){}}
+ const document={body:{},getElementById:()=>canvas,querySelector:()=>null,addEventListener(k,fn){(listeners.get(k)||listeners.set(k,[]).get(k)).push(fn);},removeEventListener(){}};
+ const window={document,localStorage:{getItem:key=>storage.get(key)||null},queueMicrotask,setTimeout,MutationObserver:class{observe(){}disconnect(){}}};
+ const modules={641:{A:Car},1507:{A:Renderer},2522:{A:Profile},4922:{},1754:{A:Recording}};
+ const adapter=installNativeCarHooks({window,runtime:{created:cap=>seen.push(cap),carDisposed(){}},require:id=>modules[id],getAccountId:()=>account});
+ try {
+   const renderer=new Renderer();renderer.canvas=canvas;renderer.scene={children:[],add(node){this.children.push(node);}};renderer.addMaterial();
+   const spawn=recording=>{const car=new Car();car.matrix={};car.recording=recording;renderer.scene.add({matrix:car.matrix});car.setCarStyle();return car;};
+   const click=()=>listeners.get('click')[0]({target:{closest:()=>({closest:()=>({__pt062EventWatch:{trackId}})})}});
+   const profile=new Profile(), key='polytrack_v5_prod_record_2_default_'+trackId;
+   storage.set(key,JSON.stringify({tokenHash:'different-profile',recording:'same'}));
+   click();profile.getCurrentUserProfile();spawn(Recording.deserialize('same'));assert.equal(seen.length,0);
+   storage.set(key,JSON.stringify({tokenHash:'native-profile',recording:'same'}));
+   click();spawn(Recording.deserialize('different'));spawn(adapter.withReplayOwners([{recording:'same'}],()=>Recording.deserialize('same')));
+   await Promise.resolve();
+   const owned=spawn(Recording.deserialize('same'));
+   await new Promise(resolve=>setTimeout(resolve,0));
+   spawn(Recording.deserialize('same'));
+   assert.equal(seen.length,1);assert.equal(seen[0].car,owned);assert.equal(seen[0].replayOwner,account);
+ } finally {adapter.dispose();}
+});

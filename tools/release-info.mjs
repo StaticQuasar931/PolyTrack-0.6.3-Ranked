@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 457,
+  "number": 462,
   "version": "0.6.3",
-  "revision": 390,
+  "revision": 391,
   "notes": [
-    "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
-    "Official and Community podium rankings show the actual top podium finishes in that scope."
+    "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
   ],
-  "preparedAt": "2026-11-22T20:31:26.670Z",
-  "committedAt": "2026-11-22T20:33:43.000Z"
+  "preparedAt": "2026-11-22T21:10:20.490Z",
+  "committedAt": "2026-11-22T21:11:00.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
