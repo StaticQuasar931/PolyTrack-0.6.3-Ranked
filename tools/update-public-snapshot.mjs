@@ -408,7 +408,7 @@ function makeCoverage(overall, manifest, exportResult, previousCoverage, savedEx
   };
 }
 
-async function updateMeta(root, generationDirectory) {
+async function updateMeta(root, generationDirectory, coverage) {
   const indexPath = path.join(root, 'index.html');
   let html = await fs.readFile(indexPath, 'utf8');
   const meta = `<meta name="polytrack-snapshot" content="./${generationDirectory}/">`;
@@ -428,6 +428,14 @@ async function updateMeta(root, generationDirectory) {
     if(!same)html=html.replace(publicationTag,'');
   }
 
+  const statsTag=/<meta\s+name=["']polytrack-snapshot-stats["'][^>]*>/i;
+  const totals={generation:packageIndex?.generation,racers:coverage?.backup?.overallEntries,
+    boards:coverage?.backup?.tracksPresent,results:coverage?.currentStaging?.counts?.normalReplayValidatedBindings};
+  if(Number.isSafeInteger(totals.generation)&&totals.generation>0&&
+      [totals.racers,totals.boards,totals.results].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1000000)){
+    const tag='<meta name="polytrack-snapshot-stats" content='+String.fromCharCode(39)+JSON.stringify(totals)+String.fromCharCode(39)+'>';
+    html=statsTag.test(html)?html.replace(statsTag,tag):html.replace(meta,meta+'\n    '+tag);
+  }else html=html.replace(statsTag,'');
   const temporary = `${indexPath}.${process.pid}.tmp`;
   await fs.writeFile(temporary, html, { flag: 'wx' });
   await fs.rename(temporary, indexPath);
@@ -693,7 +701,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   } catch {}
   const result = await publishSnapshot({ root: absoluteRoot, stagingDirectory, historyDirectory });
   await writeStagingBase(absoluteRoot, result.generation);
-  await updateMeta(absoluteRoot, result.directory);
+  await updateMeta(absoluteRoot, result.directory, coverage);
 
   if (oldCurrent && oldCurrent !== result.directory && result.archivePath) {
     const generation = Number(/^public-snapshots([1-9]\d*)$/.exec(oldCurrent)?.[1]);

@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 467,
+    "number": 469,
     "version": "0.6.3",
-    "revision": 396,
+    "revision": 397,
     "notes": [
-      "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
+      "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
     ]
   },
   "entries": [
+    {
+      "number": 467,
+      "title": "Restore published replays before ranking updates",
+      "commit": "5a4700961193e431744d768436713e5b25deca31",
+      "committedAt": "2026-11-22T22:30:33.000Z",
+      "notes": [
+        "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
+      ]
+    },
     {
       "number": 466,
       "title": "Publish rankings while pending previews wait",
@@ -182,16 +191,6 @@
       "notes": [
         "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
         "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
-      ]
-    },
-    {
-      "number": 446,
-      "title": "Check for updates sooner and equip two Garage stickers",
-      "commit": "d0041d75d9d11d0ae03e4eaf88879375bc1113d3",
-      "committedAt": "2026-11-22T02:01:15.000Z",
-      "notes": [
-        "Equip two stickers in different spots and save them with Garage Save.",
-        "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
       ]
     }
   ],

@@ -1330,3 +1330,19 @@ test('snapshot-only update preserves session dismissal and explicit menu-check o
  document.button.listeners.contextmenu({preventDefault(){},stopPropagation(){}});const menu=document.body.children.at(-1);menu.children[0].listeners.click({stopPropagation(){}});assert.equal(document.button.hidden,true);
  h.handle.resume();assert.equal(document.button.hidden,true);await h.handle.check({force:true});assert.equal(document.button.hidden,false);h.handle.dispose();
 });
+
+test('a bot-published snapshot gets its own one-time notice without a client release bump',()=>{
+  const d=new FakeDocument(),state=new Map([['polytrack-site-update-ack-release-v1:467','acknowledged']]);
+  const storage={getItem:key=>state.get(key),setItem:(key,value)=>state.set(key,value)};
+  d.querySelector=sel=>sel==='meta[name="polytrack-snapshot"]'?{content:'./public-snapshots93/'}:
+    sel==='meta[name="polytrack-snapshot-stats"]'?{content:JSON.stringify({generation:93,racers:4424,boards:450,results:25599})}:null;
+  const notice=installInstalledRevisionNotice({document:d,storage,revision:396,release:{number:467,notes:['Manual-only notes.']},isReady:()=>true});
+  assert.equal(d.dialog.children[0].textContent,'New snapshot 93');
+  assert.match(d.dialog.children[1].children[0].textContent,/4,424 racers, 450 track boards, 25,599 playable results/);
+  assert.equal(d.dialog.dataset.siteInstalledRelease,undefined);
+  d.dialog.children.at(-1).listeners.click();
+  assert.equal(state.get('polytrack-site-update-ack-snapshot-v1:93'),'acknowledged');
+  assert.equal(state.get('polytrack-site-update-last-ack-v2'),undefined);
+  notice.resume();assert.equal(d.dialog,undefined);
+  notice.dispose();
+});
