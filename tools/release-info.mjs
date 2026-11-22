@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 456,
+  "number": 457,
   "version": "0.6.3",
-  "revision": 389,
+  "revision": 390,
   "notes": [
-    "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
+    "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
+    "Official and Community podium rankings show the actual top podium finishes in that scope."
   ],
-  "preparedAt": "2026-11-22T20:11:35.963Z",
-  "committedAt": "2026-11-22T20:12:13.000Z"
+  "preparedAt": "2026-11-22T20:31:26.670Z",
+  "committedAt": "2026-11-22T20:33:43.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

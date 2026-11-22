@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=389';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=389';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=390';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=390';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=389';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=389';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=389';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=390';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=390';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=390';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -975,6 +975,7 @@ export function installEvents(bridge){
   const displayName=row=>bridge.displayName?.(row.accountId,row.name,Number(row.identityUpdatedAt)||0)||row.name||'Racer';
   const reset=eventResetLabel;
   function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(value.periods,catalogAt);
+    refreshOpenKodubCard();
     clearTimeout(boundaryTimer);
     const boundary=Math.min(...value.periods.flatMap(p=>p.enabled===false||p.archived?[]:[p.startsAt,p.endsAt]).filter(t=>Number.isSafeInteger(t)&&t>catalogAt));
     if(Number.isFinite(boundary))boundaryTimer=setTimeout(()=>void loadCatalog(true),Math.min(2147483647,Math.max(1,boundary-catalogAt+25)));
@@ -1200,7 +1201,17 @@ export function installEvents(bridge){
     return `<button type="button" class="sq-event-card sq-event-permanent" data-event-permanent><span class="sq-event-thumb">${bridge.thumbnail(ROLLING_TRACK_ID)}</span><div class="sq-event-record">${record}${pendingMarkup}</div><span><small>PERMANENT EVENT</small><strong>Rolling Hills Racer</strong><span class="sq-event-reward" title="${escape(reward.title)}">${escape(reward.text)}</span>${count}<small>No reset</small></span></button>`;
   }
   function selectView(view){dialog?.__sqArchiveReplayLabels?.disconnect();entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
-  async function open(){void standingsPreview.load();shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<div class="sq-event-browser-heading"><h3>Live events</h3><p>Choose a track for standings, replays, or your next PB.</p></div><div class="sq-event-cards">'+cards(livePeriods().filter(p=>p.kind==='kodub'),{details:true})+permanentCard(true)+cards(livePeriods().filter(p=>p.kind!=='kodub').sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind)),{details:true})+'</div>');message(['Event RP is separate from Overall RP.',bridge.dataNotice?.()||''].filter(Boolean).join(' '));void loadPermanent().then(()=>{if(!dialog||token!==requestId||!dialog.querySelector('[data-event-permanent]'))return;const active=document.activeElement;if(active?.closest('[data-event-permanent]'))return;const holder=document.createElement('div');holder.innerHTML=permanentCard(false);dialog.querySelector('[data-event-permanent]')?.replaceWith(holder.firstElementChild);}).catch(()=>{});}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
+  function refreshOpenKodubCard(){
+    const rail=dialog?.querySelector('[data-sq-live-events]');if(!rail)return;
+    const period=livePeriods().find(candidate=>candidate.kind==='kodub'),old=rail.querySelector('button[data-event-kind="kodub"]');
+    if(!period){old?.remove();return;}
+    const identity=[period.id,period.trackId,period.endsAt,period.scheduleOnly===true,period.thumbnailUrl||''].join('|');
+    if(old?.dataset.sqLiveKodub===identity)return;
+    const holder=document.createElement('div');holder.innerHTML=cards([period],{details:true});
+    const next=holder.firstElementChild;next.dataset.sqLiveKodub=identity;
+    if(old){const focused=document.activeElement===old;old.replaceWith(next);if(focused)next.focus({preventScroll:true});}else rail.prepend(next);
+  }
+  async function open(){void standingsPreview.load();shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<div class="sq-event-browser-heading"><h3>Live events</h3><p>Choose a track for standings, replays, or your next PB.</p></div><div class="sq-event-cards" data-sq-live-events>'+cards(livePeriods().filter(p=>p.kind==='kodub'),{details:true})+permanentCard(true)+cards(livePeriods().filter(p=>p.kind!=='kodub').sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind)),{details:true})+'</div>');refreshOpenKodubCard();message(['Event RP is separate from Overall RP.',bridge.dataNotice?.()||''].filter(Boolean).join(' '));void loadPermanent().then(()=>{if(!dialog||token!==requestId||!dialog.querySelector('[data-event-permanent]'))return;const active=document.activeElement;if(active?.closest('[data-event-permanent]'))return;const holder=document.createElement('div');holder.innerHTML=permanentCard(false);dialog.querySelector('[data-event-permanent]')?.replaceWith(holder.firstElementChild);}).catch(()=>{});}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
   function receiptText(receipt,local,period,published){
     if(published&&eventPublishedPbCoversReceipt(receipt,local,period,published))return '';
     if(period&&Date.now()>=period.endsAt+(period.graceMs||0)&&receipt?.status==='waiting')return 'This event closed before the run could be scored.';

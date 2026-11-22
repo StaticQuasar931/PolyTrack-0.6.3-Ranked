@@ -63,8 +63,13 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
           (doc.name === undefined || doc.name === id || typeof doc.name === 'string' &&
             /^projects\/[^/]+\/databases\/[^/]+\/documents\/0\.6\.2_race_results\/[^/]+$/.test(doc.name) &&
             doc.name.endsWith(`/${id}`)), 'canonical document identity mismatch');
-        demand(canonicalBindingSignature(source) === canonicalBindingSignature(row) &&
-          source.timeMs === row.timeMs, 'canonical binding changed');
+        const sourceBinding=canonicalBindingSignature(source),priorBinding=canonicalBindingSignature(row);
+        if(sourceBinding!==priorBinding||source.timeMs!==row.timeMs){
+          const live=JSON.parse(sourceBinding),saved=JSON.parse(priorBinding);
+          const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
+          if(source.timeMs!==row.timeMs)fields.push('time');
+          throw Error('Canonical retained track: canonical binding changed (track '+trackId+'; '+fields.join(', ')+')');
+        }
         demand(playable(source), 'canonical status held or unavailable');
         demand(typeof source.replay === 'string' &&
           createHash('sha256').update(source.replay).digest('hex') === row.replayHash, 'replay SHA256 mismatch');

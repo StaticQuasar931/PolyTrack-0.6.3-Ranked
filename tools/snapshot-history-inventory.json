@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "fullPackagesKept": [
+    "public-snapshots91",
+    "public-snapshots92"
+  ],
+  "previous": [
+    {
+      "directory": "public-snapshots82",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "6e325dca735b5ea6b052daac900555ed0c55bc45",
+      "indexBlobOid": "05a484ded08b46bf83e001286335ecc466912774",
+      "payloadFiles": 63385
+    },
+    {
+      "directory": "public-snapshots83",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "4627c1dbb040a6e791a6126a45a11299024303e8",
+      "indexBlobOid": "7a2d517af216aa8286becec22f968a9f5eed485b",
+      "payloadFiles": 63690
+    },
+    {
+      "directory": "public-snapshots84",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "19c29c68a37294473c79f9003bd83122c6cbb86d",
+      "indexBlobOid": "bf32d6e08a586df3b3ac4c98231bdebc93ecbea3",
+      "payloadFiles": 63690
+    },
+    {
+      "directory": "public-snapshots85",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "5d9dbe31ea2c209e201cf5700e77394f3a1b33e9",
+      "indexBlobOid": "a74d3028c8248cd3433882a6bfffd9d5953d687c",
+      "payloadFiles": 63690
+    },
+    {
+      "directory": "public-snapshots86",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "aa3808d683a8680289afca37dea5d4c5b3dc719c",
+      "indexBlobOid": "1820d9c811aff52afdbd0845a96a9b1cd50b29ff",
+      "payloadFiles": 63703
+    },
+    {
+      "directory": "public-snapshots87",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "d2043ee048d16a90bd12dec403f97ad6f907c68e",
+      "indexBlobOid": "c125fc98e4e5d8386b24d73314997c14fe5c49f8",
+      "payloadFiles": 63720
+    },
+    {
+      "directory": "public-snapshots89",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "a413e983d3c6c8fbdfd84b751ee4cfc3da527982",
+      "indexBlobOid": "9984d9c0da4e845b984a03abc10ed0865ddec5ee",
+      "payloadFiles": 64930
+    },
+    {
+      "directory": "public-snapshots90",
+      "retainedAtCommit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "treeOid": "f1c57ca6669d0164056072209be6f999a0502436",
+      "indexBlobOid": "1e4c3ed6e5a2071ecd1016cef03f750ab88e39b1",
+      "payloadFiles": 64944
+    }
+  ]
+}

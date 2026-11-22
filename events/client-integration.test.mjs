@@ -1175,3 +1175,19 @@ for(const kind of ['kodub','weekly','daily'])test(kind+' native event RP disting
  assert.equal(await rows.nth(4).getAttribute('data-event-pending'),'true');
  assert.match(await rows.nth(4).locator('.verified-state').getAttribute('title'),/Pending/);
 });
+
+test('an already-open Live Events panel replaces the Kodub card without rebuilding other cards',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(async()=>{
+  const at=Date.now(),week=7*86400000,periods=(await bridgeFixture.readCatalog()).periods;
+  window.testKodub={...periods[0],kind:'kodub',id:'kodub_previous',trackName:'Uplink Error',startsAt:at-4*86400000,endsAt:at+3*86400000};
+  bridgeFixture.readCatalog=async()=>({periods:[...periods,testKodub],archives:[]});await ui.refreshCatalog(true);await ui.open();
+  window.liveRail=document.querySelector('[data-sq-live-events]');
+  window.otherCard=liveRail.querySelector('[data-event-permanent]');
+  window.testKodub={...testKodub,id:'kodub_next',trackId:'c'.repeat(64),trackName:'Phantom Imperium',startsAt:at-1000,endsAt:at+week-1000};
+  await ui.refreshCatalog(true);
+ });
+ const next=p.locator('[data-sq-live-events] [data-event-kind="kodub"]');
+ assert.equal(await next.count(),1);assert.match(await next.innerText(),/Phantom Imperium/);
+ assert.equal(await p.evaluate(()=>liveRail.isConnected&&otherCard?.isConnected),true);
+});

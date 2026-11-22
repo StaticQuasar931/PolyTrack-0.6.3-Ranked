@@ -53,3 +53,10 @@ test('scoped podiums include Rolling Hills exactly once and reject incomplete sa
   assert.equal(metric('medals','community',{complete:false}).known,false);
   assert.equal(metric('medals','community',{finishes:[...samples.slice(0,-1),samples[1]]}).known,false);
 });
+
+test('scoped podium details use the same eligible tracks as the score and sort medals before field size',()=>{
+ const finishes=[{trackId:'outside',rank:1,fieldSize:999},{trackId:'small',rank:1,fieldSize:4},{trackId:'gold',rank:1,fieldSize:12},{trackId:'silver-big',rank:2,fieldSize:200},{trackId:'bronze',rank:3,fieldSize:500}];
+ const state=rankedMetricState({raceCount:finishes.length},{category:'medals',scope:'official',complete:true,finishes,officialTrackIds:['small','gold','silver-big','bronze']});
+ assert.equal(state.value,13);
+ assert.deepEqual(state.podiums.map(row=>row.trackId),['gold','silver-big']);
+});
