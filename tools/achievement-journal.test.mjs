@@ -153,7 +153,7 @@ test('eligible historical cosmetic achievements show exact coin bonuses without 
  const model=buildAchievementJournalModel({cosmetics:{theme:[['ocean','Ocean',1],['ice','Ice',3]]},progress:{confirmed:{raceCount:3}}});
  const rows=model.milestones.filter(r=>r.source==='catalog');assert.deepEqual(rows.map(r=>r.coinReward.amount),[2,4]);assert.ok(rows.every(r=>r.earned));
  assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(r=>r.coinReward.amount),[4,2]);
- const html=renderAchievementJournal({model,filter:'all',family:'style'});assert.match(html,/4 Style Coins/);assert.match(html,/eligible past achievements/);assert.match(html,/Check rewards in Shop/);
+ const html=renderAchievementJournal({model,filter:'all',family:'style'});assert.match(html,/4 Style Coins/);assert.match(html,/Past goals still count/);assert.match(html,/Check rewards in Shop/);
  assert.doesNotMatch(html,/coins claimed|balanceAfter|wallet balance|CLAIMED/);
 });
 
@@ -178,14 +178,15 @@ test('shared title and style bonuses remain one payment condition, not coins per
  assert.equal(shared.length,2);assert.equal(new Set(shared.map(row=>row.coinReward.id)).size,1);
  const html=renderAchievementJournal({model});
  assert.match(html,/shared bonus/);assert.match(html,/Shared title[/]style bonus, paid once/);
- assert.match(html,/Cosmetic unlocked does not mean coins paid/);
+ assert.match(html,/Sync to collect your coins/);
 });
 
 test('Owner Challenge shows four stages without awarding a duplicate coin or cosmetic',()=>{
  const confirmed={serverAchievements:{beatOwner:{count:2,targetAccountId:OWNER_CHALLENGE_ACCOUNT_ID}},cosmeticUnlocks:['emblem:target']};
  const model=buildAchievementJournalModel({cosmetics,progress:{confirmed,local:{ownerCheckpoint:99}}});
- const stages=model.branches.find(branch=>branch.id==='owner').milestones.sort((a,b)=>a.target-b.target);
+ assert.ok(!model.branches.some(branch=>branch.id==='owner'));
+ const stages=model.branches.find(branch=>branch.id==='style').milestones.filter(item=>item.laneId==='owner:verified-tracks').sort((a,b)=>a.target-b.target);
  assert.deepEqual(stages.map(item=>[item.target,item.earned,item.rewards.length,item.coinReward?.amount??0]),[[1,true,1,20],[2,true,1,0],[3,false,1,40],[5,false,1,0]]);
  assert.deepEqual(model.nextIds.filter(id=>stages.some(item=>item.id===id)),[stages[2].id]);
- assert.match(renderAchievementJournal({model}),/Owner Challenge/);
+ assert.match(renderAchievementJournal({model}),/Beat the owner/);
 });

@@ -221,7 +221,7 @@ test('completed cosmetic goals do not request track suggestions', {timeout:15000
 
 test('Owner Challenge shows verified track suggestions and calls track preview',{timeout:15000},async t=>{
  const page=await fixture(t);
- await mouse(page,'[data-aj-family="owner"]');
+ await mouse(page,'[data-aj-family="style"]');
  await page.evaluate(()=>{dispose();window.ownerPreview=[];dispose=api.bindAchievementJournal(document.querySelector('#host'),{getRecommendations:item=>item.metric==='ownerCheckpoint'?[{trackId:'eligible-owner-track',name:'Summer 1',reason:'Verified owner PB: 22.010s.'}]:[],onRecommendedTrack:id=>ownerPreview.push(id)});});
  await mouse(page,'[data-aj-select="owner:checkpoint:2"]');
  await page.locator('[data-aj-recommended-track="eligible-owner-track"]').waitFor();

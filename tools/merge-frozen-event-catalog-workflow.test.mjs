@@ -109,7 +109,9 @@ test('ordered coordination runs first and a reusable published capture suppresse
 test('catalog wrapper reports deferral explicitly and snapshot CLI uses the same reporter',async()=>{
  assert.match(step('Capture public event assignments'),/await reportCaptureOutcome\(await syncPublicEventCatalog\(\)\)/);
  const source=await fs.readFile(new URL('./update-public-snapshot.mjs',import.meta.url),'utf8');
- assert.match(source,/await reportCaptureOutcome\(await updatePublicSnapshot\(/);
+ const cli=source.slice(source.lastIndexOf("if (process.argv[1]"));
+ assert.match(cli,/updatePublicSnapshot\([\s\S]*?\.then\(result => reportCaptureOutcome\(result\)\)/);
+ assert.doesNotMatch(cli,/\bawait\b/, "direct CLI evaluation must not wait on its lazy circular dependency");
  for(const name of ['Capture public event assignments',capture,'Commit changed assignments'])
   assert.doesNotMatch(step(name),/continue-on-error/);
 });

@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 471,
+  "number": 472,
   "version": "0.6.3",
-  "revision": 399,
+  "revision": 400,
   "notes": [
-    "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
+    "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
   ],
-  "preparedAt": "2026-11-22T23:43:32.431Z",
-  "committedAt": "2026-11-22T23:43:34.000Z"
+  "preparedAt": "2026-11-22T23:49:01.938Z",
+  "committedAt": "2026-11-22T23:49:03.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
