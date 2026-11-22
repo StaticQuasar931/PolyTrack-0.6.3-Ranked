@@ -2,14 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 456,
+    "number": 457,
     "version": "0.6.3",
-    "revision": 389,
+    "revision": 390,
     "notes": [
-      "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
+      "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
+      "Official and Community podium rankings show the actual top podium finishes in that scope."
     ]
   },
   "entries": [
+    {
+      "number": 456,
+      "title": "Bound manual canonical recovery reads",
+      "commit": "8928058369578971e0722124c2a88ac04b3e1bdc",
+      "committedAt": "2026-11-22T20:12:13.000Z",
+      "notes": [
+        "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
+      ]
+    },
     {
       "number": 455,
       "title": "Preserve newer canonical leaderboard coverage",
@@ -194,15 +204,6 @@ const historyData = {
       "committedAt": "2026-11-16T10:59:06.000Z",
       "notes": [
         "Expanded saved-replay checks to help keep race results and leaderboards fair."
-      ]
-    },
-    {
-      "number": 431,
-      "title": "Add bounded two-engine offline verification option",
-      "commit": "126a97c902f1c6ff0b6f015d7f7b33464d7c168b",
-      "committedAt": "2026-11-16T10:43:32.000Z",
-      "notes": [
-        "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
       ]
     }
   ],

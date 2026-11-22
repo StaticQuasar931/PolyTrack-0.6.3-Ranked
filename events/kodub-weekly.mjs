@@ -1,4 +1,4 @@
-import {validateWeekly} from './kodub-schema.mjs';
+import {boundedBytes,validateAsset,validateWeekly} from './kodub-schema.mjs';
 
 export function withKodubWeekly(catalog,current,now=Date.now()){
   const endsAt=Date.parse(current?.endTime),startsAt=endsAt-7*86400000;
@@ -6,7 +6,7 @@ export function withKodubWeekly(catalog,current,now=Date.now()){
   const id='kodub_'+endsAt,periods=Array.isArray(catalog?.periods)?catalog.periods:[];
   const confirmed=periods.find(period=>period.kind==='kodub'&&period.id===id&&period.trackId===current.trackId&&period.startsAt===startsAt&&period.endsAt===endsAt);
   const period=confirmed||{id,kind:'kodub',trackId:current.trackId,trackName:current.name,author:current.author,startsAt,endsAt,maxRp:700,entrantLimit:200,scheduleOnly:true,thumbnailUrl:current.thumbnailUrl};
-  return {...catalog,periods:[...periods.filter(period=>period.kind!=='kodub'),period]};
+  return {...catalog,periods:[...periods.filter(old=>old.kind!=='kodub'||old.id!==id&&old.endsAt<=now),period]};
 }
 
 function localSelection(value, base, now) {
@@ -129,4 +129,35 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
     const label=document.createElement('small');label.className='sq-kodub-label';label.textContent='WEEKLY SPOTLIGHT';
     button.prepend(label);
   }
+}
+
+export async function readLiveKodubTrack(selection,{brokerUrl,fetcher=fetch,decode,isCurrent=()=>true}={}){
+  const url=new URL(selection.trackUrl);
+  if(url.origin!==new URL(brokerUrl).origin||url.search||url.hash||url.username||url.password||
+      !/^\/v1\/kodub-weekly\/track\/[a-f0-9]{64}$/.test(url.pathname)||
+      !/^[a-f0-9]{64}$/.test(selection.trackId||'')||Date.parse(selection.endTime)<=Date.now())throw Error('Invalid live weekly track identity.');
+  const response=await fetcher(url.href,{redirect:'error',signal:AbortSignal.timeout(8000)});
+  const bytes=validateAsset(await boundedBytes(response,262144),'track');
+  if(!isCurrent())return null;
+  const code=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  if(String(decode(code)?.trackData?.getId?.()||'')!==selection.trackId)throw Error('Live weekly track does not match its advertised identity.');
+  return isCurrent()?code:null;
+}
+
+export function updateKodubRolloverPreview(document,group,selection,onOpen,now=Date.now()){
+  const old=group.querySelector('.sq-kodub-rollover-card');
+  const identity=selection&&selection.trackId+'@'+selection.endTime;
+  const native=group.querySelector('.sq-kodub-weekly');
+  if(!identity||now>=Date.parse(selection.endTime)||native&&!native.hidden&&native.dataset.kodubIdentity===identity){
+    old?.remove();return;
+  }
+  const unavailable=group.querySelector('.sq-kodub-unavailable');if(unavailable)unavailable.hidden=true;
+  if(old?.dataset.kodubIdentity===identity)return;
+  const button=document.createElement('button'),image=document.createElement('img'),label=document.createElement('span'),title=document.createElement('strong'),note=document.createElement('small');
+  button.type='button';button.className='sq-event-card sq-kodub-rollover-card';button.dataset.kodubIdentity=identity;
+  image.src=selection.coverUrl||selection.thumbnailUrl;image.alt='';image.decoding='async';
+  title.textContent=selection.name;note.textContent='Track of the Week - Practice';
+  label.append(title,note);button.append(image,label);
+  button.addEventListener('click',()=>onOpen?.(selection));
+  if(old)old.replaceWith(button);else{const heading=group.querySelector('.sq-featured-heading');if(heading)heading.after(button);else group.prepend(button);}
 }

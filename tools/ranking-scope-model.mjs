@@ -20,7 +20,8 @@ export function rankedMetricState(entry,{category,scope='total',finishes=[],comp
     if(category==='podiumRate'&&count<3)return {...unknown,count,reason:'insufficient_eligible_scoped_results'};
     const value=category==='medals'?medals.gold*9+medals.silver*3+medals.bronze:
       Number(((medals.gold+medals.silver+medals.bronze)/count*100).toFixed(1));
-    return {known:true,value,count,medals,reason:'complete_scoped_podiums'};
+    const podiums=eligible.filter(f=>f.rank<=3).sort((a,b)=>a.rank-b.rank||b.fieldSize-a.fieldSize||String(a.trackId).localeCompare(String(b.trackId))).slice(0,2);
+    return {known:true,value,count,medals,podiums,reason:'complete_scoped_podiums'};
   }
   if(category==='average'){
     if(!['total','official','community','extra'].includes(scope))return unknown;

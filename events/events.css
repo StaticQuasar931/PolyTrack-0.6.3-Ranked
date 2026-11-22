@@ -1696,3 +1696,16 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
 }
 
 .sq-event-board .sq-event-erp-caption{color:#adc5dc;font-size:.84em;line-height:1.2;text-align:right}
+
+.sq-featured-events .sq-kodub-rollover-card {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+  align-items: center;
+}
+.sq-featured-events .sq-kodub-rollover-card > img {
+  inline-size: 100%;
+  block-size: clamp(64px, 9vw, 136px);
+  object-fit: contain;
+}
+.sq-featured-events .sq-kodub-rollover-card > span { display: grid; gap: .4rem; min-width: 0; }
