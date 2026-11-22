@@ -1,5 +1,6 @@
 import {isDeepStrictEqual} from 'node:util';
 import {isFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
+import {CanonicalRunChangedError} from './canonical-retained-track.mjs';
 import {publishedFullCanonicalReadPoint,retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
@@ -931,6 +932,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const sourceRechecks = new Map();
   const olderCanonicalTracks = new Set();
   const canonicalRetentions = new Map();
+  const deferredCanonicalTracks = new Set();
   // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
   // This is local staging validation only; network responses retain their paged-source checks.
   const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
@@ -1052,7 +1054,20 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const prior = cachedProjection(JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8')), id);
       if (!hasCompleteTrackCoverage(prior)) throw error;
       const original = structuredClone(board);
-      const result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)});
+      let result;
+      try { result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)}); }
+      catch (conflict) {
+        // Never mix a changed recording with old proof or claim a fresh board.
+        // Keep an intact prior publication only in a routine, non-full capture.
+        const saved = previous.tracks[id];
+        if (!(conflict instanceof CanonicalRunChangedError) || conflict.trackId !== id ||
+            fullCanonicalSource || trackConfirmationNotBefore !== null ||
+            cachedTracks[id]?.path !== relative || !Number.isSafeInteger(saved.checkedAt) || saved.checkedAt <= 0) throw conflict;
+        cachedTracks[id] = saved;
+        deferredCanonicalTracks.add(id);
+        log(JSON.stringify({deferredCanonicalTrack:id, checkedAt:saved.checkedAt, reason:conflict.message}));
+        return {id, deferred:true};
+      }
       const reconciled = authenticatedOverallTrackBackup(result?.board, id);
       if (reconciled.updatedAt < original.updatedAt ||
           reconciled.algorithmVersion === original.algorithmVersion &&
@@ -1205,7 +1220,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const pendingWrites = new Map([['overall.json', overall], ...promotedReplays, ...sourceRepairs]);
   let missingTracks = 0, missingEvents = 0;
   const trackSummaryMismatches = [];
-  for (const {id, value} of trackRows) {
+  for (const {id, value, deferred} of trackRows) {
+    if (deferred) continue;
     if (!value) {
       missingTracks++;
       // A failed fetch must not freshen a retained board or resurrect an invalid path.
@@ -1347,7 +1363,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,olderCanonicalTracksPreserved:olderCanonicalTracks.size,
+    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,olderCanonicalTracksPreserved:olderCanonicalTracks.size, deferredCanonicalTracks:[...deferredCanonicalTracks].sort(),
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

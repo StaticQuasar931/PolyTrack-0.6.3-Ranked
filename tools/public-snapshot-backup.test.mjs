@@ -1566,6 +1566,21 @@ test('canonical callback runs once only after exact direct account regression an
   }
 });
 
+test('same-racer recording changes retain the old board without blocking event capture', async t => {
+  const {CanonicalRunChangedError} = await import('./canonical-retained-track.mjs');
+  for (const captured of [false, true]) {
+    const prior = coverageBoard(), incoming = nextCoverageBoard(prior, prior.entries.slice(1));
+    const f = await accountCoverageFixture(t, prior);
+    const result = await f.capture(incoming, {captured, capturedFetchLimit:1,
+      reconcileCanonicalTrack: () => {throw new CanonicalRunChangedError(trackId, ['upload','frames','replay','time']);}});
+    assert.equal(result.deferred, undefined);
+    assert.deepEqual(result.tracks[trackId], JSON.parse(f.before['manifest.json']).tracks[trackId]);
+    assert.equal(await fs.readFile(path.join(f.directory,f.relative),'utf8'), f.before[f.relative]);
+    assert.deepEqual(f.reports.at(-1).deferredCanonicalTracks, [trackId]);
+    assert.equal(result.canonicalTrackRetention.accounts, 0);
+  }
+});
+
 test('canonical callback is not called for normal, incomplete, ambiguous or unsafe prior sources', async t => {
   for (const mode of ['normal','incoming-partial','prior-partial','prior-inexact','ambiguous','prior-ambiguous','unsafe-path','missing-prior']) {
     const prior=coverageBoard();

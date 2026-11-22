@@ -4,6 +4,13 @@ import {canonicalBindingSignature} from './reconcile-captured-canonical.mjs';
 import {hasPlayablePublicReplayStatus, validatePublicReplayForPublication} from './public-replay-playback.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
+export class CanonicalRunChangedError extends Error {
+  constructor(trackId, fields) {
+    super('Canonical retained track: canonical binding changed (track '+trackId+'; '+fields.join(', ')+')');
+    this.trackId = trackId;
+  }
+}
+
 const HOLD_FIELDS = ['needsReview', 'reviewHold', 'excluded', 'unscored', 'held', 'hold', 'unranked'];
 const demand = (ok, message) => { if (!ok) throw Error(`Canonical retained track: ${message}`); };
 
@@ -68,7 +75,8 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
           const live=JSON.parse(sourceBinding),saved=JSON.parse(priorBinding);
           const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
           if(source.timeMs!==row.timeMs)fields.push('time');
-          throw Error('Canonical retained track: canonical binding changed (track '+trackId+'; '+fields.join(', ')+')');
+          if(fields.includes('account') || fields.includes('track')) throw Error('Canonical retained track: canonical document identity mismatch');
+          throw new CanonicalRunChangedError(trackId,fields);
         }
         demand(playable(source), 'canonical status held or unavailable');
         demand(typeof source.replay === 'string' &&
