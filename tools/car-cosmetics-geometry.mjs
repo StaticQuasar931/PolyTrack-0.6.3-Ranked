@@ -47,6 +47,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else if(id==='roof-vent'){add(box(.124,.025,.16),dark);for(const z of [-.044,0,.044])add(box(.11,.021,.018,0,.025,z),0x93adbd);}
   else if(id==='intake'){add(box(.24,.035,.23),dark);for(const x of [-.08,.08])add(box(.052,.08,.19,x,.064),metal);add(box(.21,.025,.19,0,.115),cyan);}
+  else if(id==='rival-beacon'){add(box(.15,.028,.13),dark);add(cylinder(.055,.076,.026,8),0x71edc2,.28);add(box(.09,.02,.07,0,.112),gold);}
   else if(id==='pace-light'){add(box(.25,.035,.15),dark);add(box(.22,.026,.11,0,.048),metal);for(const x of [-.062,.062])add(box(.075,.03,.078,x,.071),0x5aeeff,.45);}
   else throw Error('Unknown roof visual');
  }else if(category==='sticker'){
@@ -69,6 +70,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
   else if(id==='shield'){add(box(.123,.105,.014,0,-.016,.008),dark);add(box(.09,.072,.01,0,-.011,.018),metal);add(box(.046,.042,.01,0,-.014,.026),cyan);}
+  else if(id==='rival-pin'){add(box(.127,.081,.016,0,-.012,.012),dark);for(const x of [-.027,.027])add(box(.029,.043,.016,x,-.008,.026),0x83edcc);}
   else if(id==='apex-crest'){add(box(.14,.10,.016,0,-.016,.009),dark);for(const x of [-.031,.031])add(box(.04,.065,.012,x,-.008,.023),0xffd57d);}
   else throw Error('Unknown nose emblem');
  }else if(category==='front'){

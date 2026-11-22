@@ -90,3 +90,31 @@ export function recommendAchievementTracks(input = {}) {
     return {...item, reason: skill + ' ' + progress + ' ' + freshness};
   });
 }
+
+export const OWNER_CHALLENGE_ACCOUNT_ID='732873e979838acecbce2a663dc69122d6deca4634e999897d1cc5e677df660b';
+export const OWNER_CHALLENGE_ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+
+export const OWNER_CHALLENGE_WORKSHOP_REWARDS=Object.freeze([
+ Object.freeze({target:2,category:'emblem',id:'rival-pin',label:'Rival Pin'}),
+ Object.freeze({target:5,category:'accessory',id:'rival-beacon',label:'Rival Beacon'})
+]);
+export function confirmedOwnerChallengeCount(profile){
+ const proof=profile?.serverAchievements?.beatOwner;
+ return proof?.targetAccountId===OWNER_CHALLENGE_ACCOUNT_ID&&Number.isSafeInteger(proof.count)&&proof.count>=0&&proof.count<=18?proof.count:null;
+}
+
+// Each PB is already account-bound by the published per-racer file. Never use
+// private captures, live submissions, or locally projected standings here.
+export function recommendOwnerChallengeTracks({accountId,ownerProfile,racerProfile,tracks}={}){
+ if(!validId(accountId)||accountId===OWNER_CHALLENGE_ACCOUNT_ID||ownerProfile?.accountId!==OWNER_CHALLENGE_ACCOUNT_ID||ownerProfile._localPlacementsOnly===true||!Array.isArray(ownerProfile.results)||!Array.isArray(tracks))return [];
+ const catalog=new Map(tracks.filter(track=>validId(track?.id)&&typeof track.name==='string'&&track.name.trim()&&(track.type==='official'||track.id===OWNER_CHALLENGE_ROLLING_TRACK_ID)).map(track=>[track.id,track.name.trim().slice(0,160)]));
+ const read=results=>{const out=new Map(),conflicts=new Set();for(const row of results){
+  if(!catalog.has(row?.trackId)||row.runVerified!==true||row.integrityVerified!==true||row.reviewHold===true||row.needsReview===true||row.localPending===true||!Number.isSafeInteger(row.timeMs)||row.timeMs<=0)continue;
+  if(out.has(row.trackId)&&out.get(row.trackId)!==row.timeMs)conflicts.add(row.trackId);
+  out.set(row.trackId,row.timeMs);
+ }for(const trackId of conflicts)out.delete(trackId);return out;};
+ const ownerTimes=read(ownerProfile.results),mine=racerProfile?.accountId===accountId&&racerProfile._localPlacementsOnly!==true&&Array.isArray(racerProfile.results)?read(racerProfile.results):new Map();
+ return [...ownerTimes].map(([trackId,target])=>({trackId,target,own:mine.get(trackId)})).filter(row=>row.own===undefined||row.own>row.target)
+  .sort((a,b)=>(a.own===undefined)-(b.own===undefined)||((a.own??a.target)/a.target)-((b.own??b.target)/b.target)||catalog.get(a.trackId).localeCompare(catalog.get(b.trackId))||a.trackId.localeCompare(b.trackId))
+  .slice(0,5).map(({trackId,target,own})=>({trackId,name:catalog.get(trackId),reason:'Verified owner PB: '+(target/1000).toFixed(3)+'s. '+(own===undefined?'No verified PB for you on this track yet.':((own-target)/1000).toFixed(3)+'s to tie.')}));
+}

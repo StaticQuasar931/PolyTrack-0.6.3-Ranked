@@ -154,6 +154,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   }
   function viewReward(reward) {
     if (!current() || !dialog.open) return;
+    if (reward?.kind==='workshopEmblem'||reward?.kind==='workshopRoof') {closeHub();onTryCosmetic?.(reward);return;}
     showTab('studio',reward); onTryCosmetic?.(reward);
   }
   function navigate(family) {
