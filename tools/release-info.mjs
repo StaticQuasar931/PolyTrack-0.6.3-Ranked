@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 447,
+  "number": 448,
   "version": "0.6.3",
-  "revision": 380,
+  "revision": 381,
   "notes": [
-    "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
-    "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
+    "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
+    "The car stays in view beside the Workshop, including on narrow screens."
   ],
-  "preparedAt": "2026-11-22T02:27:19.261Z",
-  "committedAt": "2026-11-22T02:27:21.000Z"
+  "preparedAt": "2026-11-22T03:00:26.835Z",
+  "committedAt": "2026-11-22T03:00:28.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
