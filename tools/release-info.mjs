@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 462,
+  "number": 463,
   "version": "0.6.3",
-  "revision": 391,
+  "revision": 392,
   "notes": [
-    "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
+    "Rankings updates prioritize the track boards needed for Overall rankings."
   ],
-  "preparedAt": "2026-11-22T21:10:20.490Z",
-  "committedAt": "2026-11-22T21:11:00.000Z"
+  "preparedAt": "2026-11-22T21:22:23.380Z",
+  "committedAt": "2026-11-22T21:22:25.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

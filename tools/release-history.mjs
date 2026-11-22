@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 462,
+    "number": 463,
     "version": "0.6.3",
-    "revision": 391,
+    "revision": 392,
     "notes": [
-      "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
+      "Rankings updates prioritize the track boards needed for Overall rankings."
     ]
   },
   "entries": [
+    {
+      "number": 462,
+      "title": "Keep saved Workshop styles on personal replays",
+      "commit": "2dbf15c499575e2488485b70f0c81178716a93b7",
+      "committedAt": "2026-11-22T21:11:00.000Z",
+      "notes": [
+        "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
+      ]
+    },
     {
       "number": null,
       "title": "Quarantine only changed recordings in routine snapshots",
@@ -188,16 +197,6 @@ const historyData = {
       "notes": [
         "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
         "Browse the Style Shop offline, open podium details, and see cleaner event badges."
-      ]
-    },
-    {
-      "number": 436,
-      "title": "Add Workshop stickers and restore offline workflow checks",
-      "commit": "49bf8ccf70020857d45d941f00f03cb31e0cd303",
-      "committedAt": "2026-11-18T01:47:19.000Z",
-      "notes": [
-        "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
-        "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
       ]
     }
   ],

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { decodeSnapshot, publishSnapshot, MAX_DECODED_BYTES } from './snapshot-package.mjs';
-import { runPublicSnapshotBackup } from './public-snapshot-backup.mjs';
+import { PUBLIC_SNAPSHOT_LIMITS, runPublicSnapshotBackup } from './public-snapshot-backup.mjs';
 import { PublicBackupDeferredError } from './public-backup-fetch.mjs';
 import { exportPublicProfilesAndReplays } from './public-profile-replay-export.mjs';
 import { createSnapshotExportFetch } from './snapshot-export-auth.mjs';
@@ -580,7 +580,8 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     }
     const catalogHandoff = env.EVENT_CATALOG_HANDOFF_FILE ? eventCatalogHandoffFromEnvironment({env,
       sourceCommit:await resolveSourceCommit(absoluteRoot)}) : null;
-    backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
+    const manualRequiredTrackFetches = env.GITHUB_EVENT_NAME==='workflow_dispatch' && replayDocumentLimit===1000 && !fullPublic;
+    backupResult=await capture({...(manualRequiredTrackFetches ? {trackFetchLimit:PUBLIC_SNAPSHOT_LIMITS.manualRequiredTrackFetches,manualRequiredTrackFetches:true}:{}),...captureOptions,directory:stagingDirectory,log,
       ...(canonicalRetention?{reconcileCanonicalTrack:canonicalRetention.reconcile}:{}),
       ...(catalogHandoff?{catalogHandoff}:{}),
       ...(nativeCapture?{nativeVerification:nativeCapture}:{}),

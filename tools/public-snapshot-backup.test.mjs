@@ -1566,6 +1566,26 @@ test('canonical callback runs once only after exact direct account regression an
   }
 });
 
+test('required missing track consumes the available slot before ordinary optional refreshes', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(),'required-priority-'));
+  t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const optional = 'b'.repeat(64), calls = [];
+  const result = await runPublicSnapshotBackup({directory, now:1000, trackFetchLimit:1, log:()=>{},
+    trackIds:[optional,trackId], fetchImpl:async input=>{
+      const url = new URL(input);
+      if (url.pathname==='/v1/snapshot/overall')return Response.json({...overall,
+        trackCatalog:[{trackId,name:'Required',updatedAt:300}], trackSummaries:[{trackId:optional,updatedAt:100}]});
+      if(url.pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+      if(url.pathname==='/v1/snapshot/track'){
+        calls.push(url.searchParams.get('trackId'));
+        return Response.json({...coverageBoard(), pagination:undefined, paginatedSource:undefined});
+      }
+      return new Response('',{status:404});
+    }});
+  assert.deepEqual(calls,[trackId]);
+  assert.equal(result.tracks[trackId].path,'tracks/'+trackId+'.json');
+});
+
 test('confirmed recording change omits exactly the changed account, not a required board', async t => {
   const {createCanonicalRetainedTrack} = await import('./canonical-retained-track.mjs');
   const prior = coverageBoard();

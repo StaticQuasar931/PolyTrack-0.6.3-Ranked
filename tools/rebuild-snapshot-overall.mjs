@@ -20,7 +20,7 @@ export async function rebuildSnapshotOverall({directory,now=Date.now,validateOnl
  const tracks=[];
  for(const [id,record] of Object.entries(manifest.tracks||{})){
   if(!ID.test(id))throw Error('Invalid snapshot track identifier');
-  if(!record?.path){if(required.has(id))throw Error('Missing required snapshot track');continue;}
+  if(!record?.path){if(required.has(id))throw Error('Missing required snapshot track: '+id);continue;}
   if(record.path!=='tracks/'+id+'.json')throw Error('Invalid snapshot track path');
   const board=await read(record.path);
   if(board.trackId!==id||board.updatedAt!==record.updatedAt||record.sourceUpdatedAt!==undefined&&record.sourceUpdatedAt!==board.updatedAt||record.revision!==undefined&&record.revision!==Number(board.revision||board.sourceRevision||0))throw Error('Snapshot track binding mismatch');

@@ -22,7 +22,7 @@ import {aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_
   SERVER_ACHIEVEMENT_CATALOG, SPECIAL_ROLLING_HILLS_TRACK_ID} from '../workers/ranked/src/server-achievements.js';
 export {publicEventPlaybackForPublication as publicEventPlaybackBackup} from './public-event-playback.mjs';
 
-export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 20, eventFetches: 120, eventReplayFetches: 30, pageFetches: 100,
+export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 20, manualRequiredTrackFetches: 40, eventFetches: 120, eventReplayFetches: 30, pageFetches: 100,
   eventReplaysPerPeriod: 500, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4});
 const WORKER = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -852,11 +852,11 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
 
 async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null, reconcileCanonicalTrack = null, fullCanonicalSource = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, manualRequiredTrackFetches = false, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null, reconcileCanonicalTrack = null, fullCanonicalSource = null} = {}) {
   if(fullCanonicalSource!==null&&!isFullCanonicalTrackSource(fullCanonicalSource))throw Error('Opaque full canonical source required');
   const handoffNow = now === undefined ? Date.now : () => now;
   now ??= Date.now();
-  if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > (trackConfirmationNotBefore===null?PUBLIC_SNAPSHOT_LIMITS.trackFetches:FULL_TRACK_CHECK_LIMIT))
+  if (typeof manualRequiredTrackFetches !== 'boolean' || !Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > (trackConfirmationNotBefore===null?(manualRequiredTrackFetches?PUBLIC_SNAPSHOT_LIMITS.manualRequiredTrackFetches:PUBLIC_SNAPSHOT_LIMITS.trackFetches):FULL_TRACK_CHECK_LIMIT))
     throw Error('Invalid trackFetchLimit');
   if (!Number.isSafeInteger(eventReplayFetchLimit) || eventReplayFetchLimit < 0 || eventReplayFetchLimit > 512)
     throw Error('Invalid eventReplayFetchLimit');
@@ -1028,8 +1028,11 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   const plannedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds.filter(id=>!fullCanonicalSource?.has(id)),cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
     trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
-  // Required source rechecks consume the existing budget before ordinary refreshes.
-  const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id)&&!olderCanonicalTracks.has(id))].slice(0, trackFetchLimit);
+  // Missing required boards must not lose their slots to optional track refreshes.
+  const requiredMissing = (overall.trackCatalog || []).map(row => row.trackId)
+    .filter(id => TRACK_ID.test(id || '') && !cachedTracks[id]?.path && !olderCanonicalTracks.has(id));
+  const selectedTracks = [...new Set([...sourceRechecks.keys(), ...requiredMissing,
+    ...plannedTracks.filter(id => !olderCanonicalTracks.has(id))])].slice(0, trackFetchLimit);
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     // The branded complete frozen DB point proves absence; retain the existing 404 result path.
     if(fullCanonicalSource&&!fullCanonicalSource.has(id))return {id,value:null};
@@ -1315,6 +1318,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     overallResults = {path: 'overall-results.json', available: true};
   }
 
+  const unresolvedRequiredTracks = (overall.trackCatalog || []).map(row => row.trackId).filter(id => !nextTracks[id]?.path);
+  if (unresolvedRequiredTracks.length) log(JSON.stringify({unresolvedRequiredTracks}));
   const canonicalTrackRetention = {tracks:canonicalRetentions.size, accounts:0, readDocuments:0, retained:[]};
   for (const id of [...canonicalRetentions.keys()].sort()) {
     const result = canonicalRetentions.get(id);
