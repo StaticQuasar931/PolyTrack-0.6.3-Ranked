@@ -121,7 +121,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   function sharedStore(){
     observeAuth(currentAuth());
     if(!store){
-      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true,workshopStickers,automaticRewardIds:['login','milestones',...(achievementClaimsEnabled===true?['achievements']:[])]});
+      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,getRewardOwner:()=>user()?.uid,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true,workshopStickers,automaticRewardIds:['login','milestones',...(achievementClaimsEnabled===true?['achievements']:[])]});
       ownedUnsubscribe=store.subscribe(state=>{
         const ownerUid=user()?.uid,id=getAccountId(),wallet=state.wallet,inventory=state.inventory;
         if(!ownerUid||state.accountId!==id||state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION||wallet?.accountId!==id||wallet.inventoryComplete!==true||inventory?.accountId!==id||inventory.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION)return;
@@ -143,8 +143,8 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     const controls=studio.querySelector('.profile-customizer-controls')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorTimer=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
-    let returnTab='studio',previewedItem=null,stopConnectionWatch=null,syncing=false,updateSync=null,canvasPairs=[];
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorFrame=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
+    let returnTab='studio',previewedItem=null,stopConnectionWatch=null,syncing=false,updateSync=null,canvasPairs=new Map(),dirtyCanvases=new Set();
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
     const goStudio=reward=>{if(!current())return false;dialog?.close();return openStudio?.(reward)===true;};
@@ -156,21 +156,19 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       }
       return studio.querySelector('.profile-preview-stage>span>b')?.textContent?.trim().slice(0,80)||'';
     };
-    function watchRenderer(){
-      const win=document.defaultView;
-      if(document.hidden||!current()||!dialog?.open||!canvasPairs.length){
-        if(mirrorTimer)win.clearInterval(mirrorTimer);mirrorTimer=0;return;
-      }
-      if(mirrorTimer)return;
-      // Canvas draws do not mutate the DOM. Poll only when there are real pixels to mirror.
-      mirrorTimer=win.setInterval(()=>{
-        if(document.hidden||!current()||!dialog?.open){watchRenderer();return;}
+    function queueCanvasCopy(event){
+      if(event){if(!canvasPairs.has(event.target))return;dirtyCanvases.add(event.target);}
+      if(document.hidden||!current()||!dialog?.open||mirrorFrame||!dirtyCanvases.size)return;
+      mirrorFrame=document.defaultView.requestAnimationFrame(()=>{
+        mirrorFrame=0;
+        if(document.hidden||!current()||!dialog?.open)return;
         if(dialog.querySelector('.sp-live-preview>header>strong')?.textContent!==(racerName()||'Profile preview'))syncMirror();
-        for(const [source,canvas,context] of canvasPairs){
-          if(!source.isConnected||!source.width||!source.height)continue;
-          try{context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(source,0,0,canvas.width,canvas.height);}catch{}
+        for(const source of dirtyCanvases){
+          const pair=canvasPairs.get(source);if(!pair||!source.isConnected||!source.width||!source.height)continue;
+          try{pair.context.clearRect(0,0,pair.canvas.width,pair.canvas.height);pair.context.drawImage(source,0,0,pair.canvas.width,pair.canvas.height);}catch{}
         }
-      },100);
+        dirtyCanvases.clear();
+      });
     }
     function renderCosmeticPreview(request){
       if(!current()||request?.accountId!==accountId)return null;
@@ -205,18 +203,19 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       dialog.querySelector('[data-sp-live-mode]').textContent=label?'STYLE PREVIEW':active?'STUDIO PREVIEW':'CURRENT DESIGN';
       dialog.querySelector('[data-sp-live-note]').textContent=label?'Preview only: '+label+'. Not applied or purchased here.':active?'Studio preview. Not applied.':'Try a style to see it on your racer.';
       dialog.querySelector('[data-sp-live-clear]').hidden=!label;
-      canvasPairs=[];
-      if(!source){target.textContent='Open Racer Studio to load your preview.';watchRenderer();return;}
-      if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';watchRenderer();return;}
+      const previous=canvasPairs;canvasPairs=new Map();
+      if(!source){target.textContent='Open Racer Studio to load your preview.';queueCanvasCopy();return;}
+      if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';queueCanvasCopy();return;}
       const copy=source.cloneNode(true);
       // cloneNode does not copy rendered pixels; reuse only the real renderer output.
       const sourceCanvases=source.querySelectorAll('canvas');
       for(const [index,canvas] of [...copy.querySelectorAll('canvas')].entries()){
         try{
-          const original=sourceCanvases[index],context=canvas.getContext('2d');
+          const original=sourceCanvases[index],prior=previous.get(original);
+          if(prior&&prior.canvas.width===original.width&&prior.canvas.height===original.height){canvas.replaceWith(prior.canvas);canvasPairs.set(original,prior);continue;}
+          const context=canvas.getContext('2d');
           if(!original?.width||!original.height||!context)throw Error('Renderer unavailable');
-          if(!document.hidden)context.drawImage(original,0,0);
-          canvasPairs.push([original,canvas,context]);
+          canvasPairs.set(original,{canvas,context});dirtyCanvases.add(original);
         }catch{const note=document.createElement('span');note.textContent='Renderer preview unavailable.';note.dataset.spRendererUnavailable='';canvas.replaceWith(note);}
       }
       for(const [selector,kind,label] of [['.overall-car-model','stage','Edit car backdrop'],['[data-studio-preview-part="nameFont"]','nameFont','Edit name typography']]){
@@ -241,13 +240,13 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
 
         const card=content.closest('.overall-profile-card');if(card)mirrorObserver.observe(card,{attributes:true,attributeFilter:['class','style']});
       }
-      watchRenderer();
+      queueCanvasCopy();
     }
     const keepShopPreview=reward=>{if(!current()||openStudio?.(reward)!==true)return false;syncMirror();return true;};
     function close(invalidate=false,authReset=false){
       publicViewGeneration++;if(!authReset)closeGeneration++;
       stopConnectionWatch?.();stopConnectionWatch=null;updateSync=null;
-      document.defaultView.clearInterval(mirrorTimer);mirrorTimer=0;canvasPairs=[];
+      document.defaultView.cancelAnimationFrame(mirrorFrame);mirrorFrame=0;canvasPairs.clear();dirtyCanvases.clear();
       mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;mirrorRoot=null;mirrorRow=null;
       preview?.dispose();preview=null;previewedItem=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
@@ -295,11 +294,12 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       notice.hidden=!notice.textContent;
       const sync=dialog.querySelector('[data-shop-wallet-sync]');sync.hidden=!enabled;
       const connectionChanged=()=>{sync.disabled=syncing||!online();};updateSync=connectionChanged;
-      const visibilityChanged=()=>{if(document.hidden)watchRenderer();else syncMirror();};
+      const visibilityChanged=()=>{if(document.hidden)queueCanvasCopy();else syncMirror();};
       const win=document.defaultView;
       win.addEventListener('online',connectionChanged);win.addEventListener('offline',connectionChanged);connectionChanged();
       document.addEventListener('visibilitychange',visibilityChanged);
-      stopConnectionWatch=()=>{win.removeEventListener('online',connectionChanged);win.removeEventListener('offline',connectionChanged);document.removeEventListener('visibilitychange',visibilityChanged);};
+      studio.addEventListener('polytrack-preview-frame',queueCanvasCopy);
+      stopConnectionWatch=()=>{win.removeEventListener('online',connectionChanged);win.removeEventListener('offline',connectionChanged);document.removeEventListener('visibilitychange',visibilityChanged);studio.removeEventListener('polytrack-preview-frame',queueCanvasCopy);};
       sync.onclick=async()=>{
         if(!online()||syncing)return;
         let origin=dialog;const generation=closeGeneration;syncing=true;sync.disabled=true;

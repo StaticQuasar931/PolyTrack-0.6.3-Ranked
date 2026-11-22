@@ -15,11 +15,11 @@ const copy = value => structuredClone(value);
 const validAccount = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export function createShopControllerStore({transport, storage, getAccountId, getAuthScope,
   makeRequestId, withAccountLock = createShopBrowserLock(), now, cacheMs, enabled = false,
-  workshopStickers = false, autoCollectRewards = true, automaticRewardIds = ['login','milestones'], monotonicNow, collectionCooldownMs} = {}) {
+  workshopStickers = false, autoCollectRewards = true, automaticRewardIds = ['login','milestones'], getRewardOwner, monotonicNow, collectionCooldownMs} = {}) {
   if (typeof getAuthScope !== 'function' || typeof getAccountId !== 'function') fail('invalid_auth_adapter');
   const session = createShopSession({transport, storage,
     getAccountId: () => { const id = getAccountId(); return validAccount(id) ? id : null; }, makeRequestId,
-    withAccountLock, now, cacheMs, enabled, workshopStickers, monotonicNow, collectionCooldownMs});
+    withAccountLock, now, cacheMs, enabled, workshopStickers, getRewardOwner, monotonicNow, collectionCooldownMs});
   let gate = enabled === true, disposed = false, generation = 0, identity = null;
   let read = null, operation = null, phase = gate ? 'idle' : 'disabled', error = null, outcome = null;
   const listeners = new Set();

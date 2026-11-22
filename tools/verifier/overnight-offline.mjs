@@ -115,8 +115,10 @@ export async function main(mode,root,output){
         const began=performance.now(),outcomes=[];
         for(let offset=0;offset<sample.length;offset+=16){
           assert(performance.now()<absoluteDeadline-60000,'aggregate benchmark deadline');const jobs=sample.slice(offset,offset+16);
-          outcomes.push(...normalize(await verifyLocalNativeBatch(root,jobs,loadWeeklyTrustedTrack(root,jobs),{deadline:absoluteDeadline})));
+          const batch=normalize(await verifyLocalNativeBatch(root,jobs,loadWeeklyTrustedTrack(root,jobs),{deadline:absoluteDeadline}));outcomes.push(...batch);
           await write(`repeat-${repeat+1}-batch-${offset/16+1}.json`,{authority:false,repeat,completed:outcomes.length,elapsedMs:Math.round(performance.now()-began),outcomes});
+          assert(batch.length===jobs.length&&batch.every(v=>v.status==='verified'),'unavailable/mismatch: no retry');
+          if(repeat)assert.deepEqual(batch,report.repeats[0].outcomes.slice(offset,offset+jobs.length));
         }
         report.repeats.push({elapsedMs:Math.round(performance.now()-began),outcomes});await write('report.json',report);
         assert(outcomes.every(v=>v.status==='verified'),'unavailable/mismatch: no retry');if(repeat)assert.deepEqual(outcomes,report.repeats[0].outcomes);

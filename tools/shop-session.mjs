@@ -25,7 +25,7 @@ const fail = code => { throw new ShopSessionError(code); };
 
 export function createShopSession({transport, storage, getAccountId, makeRequestId,
   withAccountLock, now = Date.now, cacheMs = 30000, enabled = false, workshopStickers = false,
-  monotonicNow = () => globalThis.performance?.now?.() ?? Date.now(), collectionCooldownMs = 900000} = {}) {
+  getRewardOwner = () => null, monotonicNow = () => globalThis.performance?.now?.() ?? Date.now(), collectionCooldownMs = 900000} = {}) {
   if (typeof transport !== 'function' || typeof getAccountId !== 'function' ||
       typeof makeRequestId !== 'function' || !uint(cacheMs) || typeof now !== 'function' || typeof monotonicNow !== 'function' ||
       !uint(collectionCooldownMs) || collectionCooldownMs < 900000 || collectionCooldownMs > 86400000 ||
@@ -46,7 +46,24 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     const at = monotonicNow();
     return entry && Number.isFinite(at) && at >= entry.at ? at - entry.at : Infinity;
   };
-  const collectionFresh = entry => elapsedSince(entry) < collectionCooldownMs;
+  function rewardProbeKey(id,rewardIds){
+    try{
+      const uid=getRewardOwner();
+      return typeof uid==='string'&&uid.length>0&&uid.length<=128?'polytrack-shop-reward-check-v1:'+id+':'+encodeURIComponent(uid)+':'+[...rewardIds].sort().join(','):null;
+    }catch{return null;}
+  }
+  function collectionFresh(id,rewardIds){
+    const signature=[...rewardIds].sort().join(',');
+    if(elapsedSince(collections.get(id+':'+signature))<collectionCooldownMs)return true;
+    const durable=rewardProbeKey(id,rewardIds),at=now();
+    if(!durable||!uint(at))return false;
+    try{const raw=storage?.getItem(durable);if(!/^\d{1,16}$/.test(raw||''))return false;const prior=Number(raw);return uint(prior)&&at>=prior&&at-prior<collectionCooldownMs;}catch{return false;}
+  }
+  function rememberCollection(id,rewardIds){
+    const signature=[...rewardIds].sort().join(','),durable=rewardProbeKey(id,rewardIds),at=now();
+    collections.set(id+':'+signature,{at:monotonicNow()});
+    if(durable&&uint(at))try{storage?.setItem(durable,String(at));}catch{}
+  }
   const loginKnownForWindow = id => elapsedSince(loginWindows.get(id)) < (loginWindows.get(id)?.remaining ?? 0);
   function rememberLoginWindow(value, id, sentAt) {
     const {claimDay,serverNow,dayEndsAt}=value||{};
@@ -172,6 +189,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       await locked(id, g, async signal => {
         const saved = pending(id);
         if (saved) { state.pending = saved; state.rewardSync = 'pending'; return snapshot(); }
+        if(collectionFresh(id,rewardIds)){state.rewardSync='settled';return snapshot();}
         for (const rewardId of rewardIds) {
           check(id, g);
           if (rewardId === 'login' && loginKnownForWindow(id)) continue;
@@ -185,7 +203,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
                 ['reward_already_claimed','server_milestone_required','server_achievement_required','achievement_coins_disabled'].includes(error.code))) throw error;
           }
         }
-        state.rewardSync = 'settled'; return snapshot();
+        check(id,g);rememberCollection(id,rewardIds);state.rewardSync = 'settled'; return snapshot();
       });
     } catch (error) {
       if (!['shop_busy','shop_locks_unavailable','shop_lock_cancelled'].includes(error.code)) throw error;
@@ -204,7 +222,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       try {
         check(id, g);
         const cached = caches.get(id);
-        const collectionDue = collectRewards === true && !collectionFresh(collections.get(id));
+        const collectionDue = collectRewards === true && !collectionFresh(id,rewardIds);
         const reused = !refresh && completion !== true && fresh(cached) && !collectionDue;
         // A versioned catalog is presentation/quote input, never ownership proof.
         // Only mutation completion may reuse it; wallet/inventory are always read.
@@ -212,7 +230,6 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
           catalogMemory.value.version === PROFILE_SHOP_CATALOG_VERSION ? catalogMemory.value : null;
         if (!reused && collectionDue) {
           await collectOpeningRewards(id, g, rewardIds); check(id, g);
-          collections.set(id, {at:monotonicNow()});
         }
         const next = reused ? copy(cached.value) : await serverState(id, signal, reusedCatalog);
         check(id, g);

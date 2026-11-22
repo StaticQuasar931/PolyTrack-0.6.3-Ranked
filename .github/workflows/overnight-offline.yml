@@ -56,7 +56,7 @@ jobs:
           const c=config();assert.equal(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),c.implementation);
           CHECK
           printf '/*\n!/public-snapshots*/\n/public-snapshots91/\n' | git sparse-checkout set --no-cone --stdin
-          git restore --source="$SNAPSHOT_SOURCE_COMMIT" --worktree -- snapshot-current.json verification-ledger-current.json verification-ledger
+          git restore --source="$SNAPSHOT_SOURCE_COMMIT" --worktree -- snapshot-current.json verification-ledger-current.json verification-ledger public-snapshots91
       - name: Test offline benchmark contracts
         run: node --test tools/verifier/overnight-offline.test.mjs
       - name: Install pinned native dependencies

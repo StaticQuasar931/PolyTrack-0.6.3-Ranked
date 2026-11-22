@@ -392,7 +392,8 @@ test('live canvas preview copies existing renderer pixels rather than an empty c
  await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=16;canvas.height=8;canvas.dataset.rendererFixture='';const context=canvas.getContext('2d');context.fillStyle='#2468ac';context.fillRect(0,0,16,8);document.querySelector('.profile-customizer .profile-preview-stage').append(canvas);});
  await openShop(page);
  assert.deepEqual(await page.locator('[data-sp-live-stage] canvas').evaluate(node=>[...node.getContext('2d').getImageData(0,0,1,1).data]),[36,104,172,255]);
- await page.evaluate(()=>{const canvas=document.querySelector('.profile-customizer canvas'),context=canvas.getContext('2d');context.fillStyle='#aabbcc';context.fillRect(0,0,16,8);document.querySelector('#content').__profileShopRefreshPreview();});
+ await page.evaluate(()=>{const canvas=document.querySelector('.profile-customizer canvas'),context=canvas.getContext('2d');context.fillStyle='#aabbcc';context.fillRect(0,0,16,8);canvas.dispatchEvent(new Event('polytrack-preview-frame',{bubbles:true}));});
+ await page.waitForFunction(()=>document.querySelector('[data-sp-live-stage] canvas')?.getContext('2d').getImageData(0,0,1,1).data[0]===170);
  assert.deepEqual(await page.locator('[data-sp-live-stage] canvas').evaluate(node=>[...node.getContext('2d').getImageData(0,0,1,1).data]),[170,187,204,255]);
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls+draftWrites),0);
  assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage').evaluate(node=>node.inert),false);page.noExternal();
@@ -408,7 +409,7 @@ test('live preview has category links instead of redundant Workshop or Shop laun
 
 test('canvas-only frames and supplied identity refresh without DOM changes; disposal stops mirror work',async t=>{
  const page=await fixture(t,{enabled:false});await page.evaluate(()=>{const c=document.createElement('canvas');c.width=4;c.height=4;c.getContext('2d').fillRect(0,0,4,4);document.querySelector('.profile-customizer .profile-preview-stage').append(c);});await openShop(page);
- await page.evaluate(()=>{nativeEntry.name='Fresh Fixture';const c=document.querySelector('.profile-customizer canvas');c.getContext('2d').fillStyle='#aabbcc';c.getContext('2d').fillRect(0,0,4,4);});
+ await page.evaluate(()=>{nativeEntry.name='Fresh Fixture';const c=document.querySelector('.profile-customizer canvas');c.getContext('2d').fillStyle='#aabbcc';c.getContext('2d').fillRect(0,0,4,4);c.dispatchEvent(new Event('polytrack-preview-frame',{bubbles:true}));});
  await page.waitForFunction(()=>document.querySelector('.sp-live-preview>header>strong')?.textContent==='Fresh Fixture');
  await page.waitForFunction(()=>{let c=document.querySelector('[data-sp-live-stage] canvas');return c?.getContext('2d').getImageData(0,0,1,1).data[0]===170;});
  await page.evaluate(()=>document.querySelector('#content').__shopCleanup());assert.equal(await page.locator('.profile-shop-dialog').count(),0);assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls+draftWrites),0);page.noExternal();
@@ -456,8 +457,8 @@ test('Close from Achievements uses the optional Shop host callback',async t=>{
 test('offline after remount shows a display-only balance for the same owner; purchase still settles once',async t=>{
  const page=await fixture(t);
  await openShop(page);await settleShop(page);await assertConfirmedBalance(page);
- const previous=await page.locator('.sp-summary strong').innerText();
- await fixture(t,{reusePage:page});
+ const previous=await page.locator('.sp-summary strong').innerText(),persistedWallet=await page.evaluate(()=>serverWallet);
+ await fixture(t,{reusePage:page});await page.evaluate(wallet=>Object.assign(serverWallet,wallet),persistedWallet);
  await page.context().setOffline(true);
  await openShop(page,{sync:false});
  assert.equal(await page.locator('.sp-summary strong').innerText(),previous);
@@ -473,7 +474,7 @@ test('offline after remount shows a display-only balance for the same owner; pur
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);
  await page.context().setOffline(false);
  await page.locator('[data-shop-wallet-sync]:enabled').waitFor();
- assert.equal(await page.locator('.sp-summary strong').innerText(),'Not synced');
+ assert.equal(await page.locator('.sp-summary strong').innerText(),previous);
  assert.equal(await page.locator('[data-sp-action="buy"]:enabled').count(),0);
  await page.locator('[data-shop-wallet-sync]').click();await settleShop(page);await assertConfirmedBalance(page);
  const cachedBalance=()=>page.evaluate(()=>JSON.parse(Object.entries(localStorage).find(([key])=>key.startsWith('polytrack-profile-shop-balance-ui-v1:'))[1]).balance);
@@ -496,37 +497,30 @@ test('offline after remount shows a display-only balance for the same owner; pur
  assert.equal(await page.evaluate(()=>dbCalls),0);page.noExternal();
 });
 
-test('Shop polls only visible canvas mirrors and resumes pixel-only updates',async t=>{
+test('Shop copies only signaled canvas frames and defers dirty frames while hidden',async t=>{
  const page=await fixture(t,{enabled:false});
- await page.evaluate(()=>{
-  const start=window.setInterval,stop=window.clearInterval;
-  window.shopTimers=new Set();
-  window.setInterval=(...args)=>{const id=start(...args);if(new Error().stack.includes('/tools/profile-shop-host.mjs'))shopTimers.add(id);return id;};
-  window.clearInterval=id=>{shopTimers.delete(id);stop(id);};
- });
+ await page.evaluate(()=>{const draw=CanvasRenderingContext2D.prototype.drawImage;window.mirrorDraws=0;CanvasRenderingContext2D.prototype.drawImage=function(...args){if(this.canvas.closest('[data-sp-live-stage]'))mirrorDraws++;return draw.apply(this,args);};});
  await openShop(page,{sync:false});
- assert.equal(await page.evaluate(()=>shopTimers.size),0);
- await page.evaluate(()=>{
-  const canvas=document.createElement('canvas');canvas.width=4;canvas.height=4;
-  document.querySelector('.profile-customizer .profile-preview-stage').append(canvas);
- });
- await page.waitForFunction(()=>shopTimers.size===1);
- const setHidden=hidden=>page.evaluate(hidden=>{
-  Object.defineProperty(document,'hidden',{configurable:true,value:hidden});
-  document.dispatchEvent(new Event('visibilitychange'));
- },hidden);
- await setHidden(true);
- assert.equal(await page.evaluate(()=>shopTimers.size),0);
- await page.evaluate(()=>{const ctx=document.querySelector('.profile-customizer canvas').getContext('2d');ctx.fillStyle='#44aacc';ctx.fillRect(0,0,4,4);});
- const red=()=>page.locator('[data-sp-live-stage] canvas').evaluate(node=>node.getContext('2d').getImageData(0,0,1,1).data[0]);
- assert.equal(await red(),0);
- await setHidden(false);
- assert.equal(await red(),68);
- assert.equal(await page.evaluate(()=>shopTimers.size),1);
- await page.evaluate(()=>document.querySelector('.profile-customizer canvas').remove());
- await page.waitForFunction(()=>shopTimers.size===0);
- await page.keyboard.press('Escape');
- assert.equal(await page.evaluate(()=>shopTimers.size+network.length+tokenCalls+dbCalls),0);page.noExternal();
+ await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=4;canvas.height=4;document.querySelector('.profile-customizer .profile-preview-stage').append(canvas);});
+ await page.waitForFunction(()=>mirrorDraws===1);await page.waitForTimeout(220);
+ assert.equal(await page.evaluate(()=>mirrorDraws),1,'idle canvas does not copy');
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});const source=document.querySelector('.profile-customizer canvas'),ctx=source.getContext('2d');ctx.fillStyle='#44aacc';ctx.fillRect(0,0,4,4);source.dispatchEvent(new Event('polytrack-preview-frame',{bubbles:true}));});
+ assert.equal(await page.evaluate(()=>mirrorDraws),1);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+ await page.waitForFunction(()=>mirrorDraws===2);
+ assert.equal(await page.locator('[data-sp-live-stage] canvas').evaluate(node=>node.getContext('2d').getImageData(0,0,1,1).data[0]),68);
+ await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
+});
+
+test('settled Shop reward cooldown survives a reload but is scoped to its Cloud Save owner',async t=>{
+ let page=await fixture(t);await openShop(page);await settleShop(page);
+ assert.equal(await page.evaluate(()=>claims.length),3);
+ page=await fixture(t,{reusePage:page});await openShop(page);await settleShop(page);
+ assert.equal(await page.evaluate(()=>claims.length),0,'same owner does not repeat reward POSTs');
+ assert.equal(await page.evaluate(()=>network.filter(r=>r.path==='/v1/currency/wallet').length),1,'explicit sync still obtains authoritative wallet');
+ page=await fixture(t,{reusePage:page});await page.evaluate(()=>fixtureAuth.emit({...fixtureUser,uid:'other-fixture-owner'}));await openShop(page);await settleShop(page);
+ assert.equal(await page.evaluate(()=>claims.length),3,'other owner cannot inherit local cooldown');
+ page.noExternal();
 });
 
 test('valid seven-tier milestone receipt settles once and is reflected only by the final authoritative wallet',async t=>{

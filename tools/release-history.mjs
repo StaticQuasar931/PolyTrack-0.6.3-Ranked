@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 446,
+    "number": 447,
     "version": "0.6.3",
-    "revision": 379,
+    "revision": 380,
     "notes": [
-      "Equip two stickers in different spots and save them with Garage Save.",
-      "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
+      "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
+      "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
     ]
   },
   "entries": [
+    {
+      "number": 446,
+      "title": "Check for updates sooner and equip two Garage stickers",
+      "commit": "d0041d75d9d11d0ae03e4eaf88879375bc1113d3",
+      "committedAt": "2026-11-22T02:01:15.000Z",
+      "notes": [
+        "Equip two stickers in different spots and save them with Garage Save.",
+        "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
+      ]
+    },
     {
       "number": 445,
       "title": "Match the native Garage rail and streamline Style Shop",
@@ -189,16 +199,6 @@ const historyData = {
       "notes": [
         "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
         "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
-      ]
-    },
-    {
-      "number": 419,
-      "title": "Refine rank duration and restore event card layout",
-      "commit": "227c2f5550f21af557b24ac987e2eded79db97ba",
-      "committedAt": "2026-11-16T05:43:12.000Z",
-      "notes": [
-        "Rank time is smaller and clearer; movement arrows disappear after three days.",
-        "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
       ]
     }
   ],

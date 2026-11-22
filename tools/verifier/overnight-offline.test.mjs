@@ -59,3 +59,26 @@ test('saved package checkout fetches missing blobs together rather than per-file
  assert(text.includes('git restore --source="$SNAPSHOT_SOURCE_COMMIT" --worktree -- snapshot-current.json verification-ledger-current.json verification-ledger'));
  assert(!text.includes('git archive'));
 });
+
+test('saved snapshot files are restored from their own pinned commit',async()=>{
+ const {execFileSync}=await import('node:child_process'),{default:os}=await import('node:os'),{default:path}=await import('node:path');
+ const workflow=fs.readFileSync(new URL('../../.github/workflows/overnight-offline.yml',import.meta.url),'utf8');
+ const fields=workflow.match(/git restore --source="\$SNAPSHOT_SOURCE_COMMIT" --worktree -- ([^\r\n]+)/)?.[1].split(' ');
+ assert.ok(fields?.includes('public-snapshots91'));
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'polytrack-pin-fixture-'));
+ const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
+ const files=['snapshot-current.json','verification-ledger-current.json','verification-ledger/index.json','public-snapshots91/index.json'];
+ try{
+   git('init');git('config','user.name','Offline fixture');git('config','user.email','offline@example.test');
+   for(const f of files){fs.mkdirSync(path.dirname(path.join(root,f)),{recursive:true});fs.writeFileSync(path.join(root,f),'publication');}
+   git('add','.');git('commit','-m','publication');const pin=git('rev-parse','HEAD');
+   git('rm','public-snapshots91/index.json');
+   fs.writeFileSync(path.join(root,'snapshot-current.json'),'implementation');
+   fs.writeFileSync(path.join(root,'implementation.mjs'),'untouched');
+   git('add','.');git('commit','-m','implementation');
+   git('sparse-checkout','set','--no-cone','/*','!/public-snapshots*/','/public-snapshots91/');
+   git('restore','--source='+pin,'--worktree','--',...fields);
+   for(const f of files)assert.equal(fs.readFileSync(path.join(root,f),'utf8'),'publication');
+   assert.equal(fs.readFileSync(path.join(root,'implementation.mjs'),'utf8'),'untouched');
+ }finally{if(path.dirname(root)===os.tmpdir()&&path.basename(root).startsWith('polytrack-pin-fixture-'))fs.rmSync(root,{recursive:true,force:true});}
+});

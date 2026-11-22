@@ -43,7 +43,7 @@ export function mountProfileShopUi(root,options={}) {
   let earnOpen=doc.defaultView.matchMedia('(min-width:801px)').matches;
   const scoped=()=>typeof state.accountId==='string'&&state.accountId.length>0;
   const wallet=()=>scoped()&&state.cloudSaveConnected!==false&&state.wallet?.status==='confirmed'&&state.wallet.accountId===state.accountId&&uint(state.wallet.balance)&&uint(state.wallet.revision)?state.wallet:null;
-  const offlineBalance=()=>{
+  const cachedBalance=()=>{
     if(!scoped()||state.cloudSaveConnected===false)return null;
     const cached=state.getLastConfirmedBalance?.();
     return cached?.accountId===state.accountId&&uint(cached.balance)&&uint(cached.revision)?cached:null;
@@ -72,10 +72,10 @@ export function mountProfileShopUi(root,options={}) {
   const racerName=()=>{try{return state.getRacerName?.()||'';}catch{return '';}};
   function render(focusKey) {
     const list=sortProfileShopItems(items(),sortMode,inventory()?.ownedIds??[]),balance=wallet(),pending=!!operation,selected=list.find(item=>item.id===confirmId);
-    const offline=!online(),displayBalance=balance||(offline?offlineBalance():null);
-    const historical=displayBalance&&(offline||pending||state.loading||state.busy);
+    const offline=!online(),displayBalance=balance||cachedBalance();
+    const historical=displayBalance&&(!balance||offline||pending||state.loading||state.busy);
     const cloudStatus=offline?(displayBalance?'Offline. Saved balance is for reference only. Purchases are unavailable.':'Offline. No confirmed balance is saved for this racer and Cloud Save owner.'):
-      state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':historical?'Previous server confirmation; current balance is synchronizing.':
+      state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':historical?(pending||state.loading||state.busy?'Refreshing wallet...':'Saved balance. Sync wallet before buying.'):
       balance?'Confirmed by the server.':'Sync your wallet to check your confirmed balance.';
     host.innerHTML=`<header class="sp-head" ${state.embedded?'hidden':''}><div><p>PROFILE COLLECTION</p><h2 id="${prefix}-title">Style shop</h2></div>${state.actions?.onClose?'<button type="button" data-sp-action="close">Close</button>':''}</header>
       <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||balanceMessage(balance))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>

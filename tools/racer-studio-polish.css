@@ -247,3 +247,7 @@
 
 .profile-customizer .profile-customizer-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .profile-customizer .profile-customizer-actions>:is([role="status"],.studio-dirty-marker,.studio-save-state,.studio-selection-error,[data-save-profile-cosmetics]){grid-column:1/-1}
+
+.profile-customizer .profile-customizer-preview .profile-row-showcase .showcase-row{min-height:108px;align-items:center}
+.profile-customizer .profile-customizer-preview .showcase-row .showcase-meta{display:flex;flex-wrap:wrap;gap:4px 8px;font:12px/1.4 sans-serif}
+.profile-customizer .profile-customizer-preview .showcase-row .showcase-meta>span:empty{display:none}

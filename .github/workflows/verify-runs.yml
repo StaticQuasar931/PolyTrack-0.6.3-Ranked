@@ -70,13 +70,14 @@ jobs:
           const configuredMode=await readRepositoryVerificationAuthority(process.cwd(),process.env.POLYTRACK_VERIFICATION_AUTHORITY);
           const manualOvernight=process.env.MANUAL_OVERNIGHT==='true';
           const expected=process.env.EXPECTED_SOURCE_COMMIT||'';
-          if(expected&&(!/^[a-f0-9]{40}$/.test(expected)||execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==expected))throw Error('Capture request differs from tested source');
+          let head;const sourceHead=()=>head??= execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+          if(expected&&(!/^[a-f0-9]{40}$/.test(expected)||sourceHead()!==expected))throw Error('Capture request differs from tested source');
           if(manualOvernight&&(process.env.MANUAL_CATCH_UP==='true'||!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_SOURCE_COMMIT||'')||
-            execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.EXPECTED_SOURCE_COMMIT))throw Error('Explicit overnight kickoff requires its tested commit and cannot catch up live queues');
+            sourceHead()!==process.env.EXPECTED_SOURCE_COMMIT))throw Error('Explicit overnight kickoff requires its tested commit and cannot catch up live queues');
           let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
           const plan=overnightSnapshotPlan({eventName:process.env.GITHUB_EVENT_NAME,schedule:process.env.CAPTURE_SCHEDULE,
             now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),configuredMode,previousCaptureStartedAt:prior?.startedAt,manualOvernight});
-          const sourceCommit=plan.overnight||expected?execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim():'';
+          const sourceCommit=plan.overnight||expected?sourceHead():'';
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+plan.mode+'\novernight='+plan.overnight+'\nskip='+plan.skip+'\nsource_commit='+sourceCommit+'\n');
           console.log(JSON.stringify({overnightPlan:plan}));
           AUTHORITY
