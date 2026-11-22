@@ -40,6 +40,11 @@ const mustBlock = [
   'killallwomen',
   'killallnonbinary',
   // Requested slur variant.
+  'nga',
+  'ngga',
+  'n.g.g.a',
+  'Racer nga',
+  'NGA123',
   'Nixxer',
   'NixxerRacer',
   'niqqer',
@@ -54,6 +59,9 @@ const mustBlock = [
 
 const mustAllow = [
   // Ordinary political vocabulary and neutral identity/nationality names.
+  'Tonga',
+  'MangaRacer',
+  'Angga',
   'Nigerian Racer',
   'NigerianRacer',
   'Nix',

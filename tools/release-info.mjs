@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 470,
+  "number": 471,
   "version": "0.6.3",
-  "revision": 398,
+  "revision": 399,
   "notes": [
-    "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
+    "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
   ],
-  "preparedAt": "2026-11-22T23:13:37.804Z",
-  "committedAt": "2026-11-22T23:13:39.000Z"
+  "preparedAt": "2026-11-22T23:43:32.431Z",
+  "committedAt": "2026-11-22T23:43:34.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

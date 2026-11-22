@@ -736,5 +736,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const args = new Set(raw);
   const unknown = [...args].filter(arg => !['--offline', '--full-public', '--refresh-replays'].includes(arg));
   if (unknown.length) throw new Error(`Unknown arguments: ${unknown.join(', ')}`);
-  await reportCaptureOutcome(await updatePublicSnapshot({ offline: args.has('--offline'), fullPublic: args.has('--full-public'), refreshReplays: args.has('--refresh-replays'), verificationAuthority }));
+  // The lazy native phase imports this module via published-target-retention.
+  // Settle this module before waiting for the phase to avoid an ESM evaluation cycle.
+  updatePublicSnapshot({ offline: args.has('--offline'), fullPublic: args.has('--full-public'), refreshReplays: args.has('--refresh-replays'), verificationAuthority })
+    .then(result => reportCaptureOutcome(result)).catch(error => {
+      console.error(error);
+      process.exitCode = 1;
+    });
 }

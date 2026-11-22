@@ -94,9 +94,9 @@ export function meshThumbnail(document,category,id,tier){
  for(const triangle of triangles.sort((a,b)=>a.depth-b.depth)){ctx.beginPath();triangle.points.forEach(([x,y],i)=>i?ctx.lineTo(screen(x,0),screen(y,1)):ctx.moveTo(screen(x,0),screen(y,1)));ctx.closePath();ctx.fillStyle=ctx.strokeStyle=triangle.fill;ctx.fill();ctx.lineWidth=.65;ctx.stroke();}
  const src=canvas.toDataURL();thumbnailCache.set(key,src);return src;
 }
-const surfaceArt={center:'M12 10h8v12h-8z',left:'M6 10h4v12H6z',right:'M22 10h4v12h-4z',front:'M11 4h10v5H11z',rear:'M10 24h12v4H10z',under:'M11 9h10v14H11z'};
+const surfaceArt={center:'M13 8h6v6h-6z','mid-body':'M12 14h8v7h-8z','rear-deck':'M11 21h10v4H11z',left:'M6 10h4v12H6z',right:'M22 10h4v12h-4z',front:'M11 4h10v5H11z',rear:'M10 24h12v4H10z',under:'M11 9h10v14H11z'};
 function placementArt(id){return '<svg viewBox="0 0 32 32" aria-hidden="true" fill="none"><path fill="#263a64" stroke="#95acd1" stroke-width="1.4" d="M13 4h6l3 7v11l2 3v3H8v-3l2-3V11Z"/><path fill="#95acd1" d="M5 8h4v7H5zm18 0h4v7h-4zM5 21h4v7H5zm18 0h4v7h-4z"/><path fill="'+(id==='under'?'#ffce89':'#80eeff')+'" d="'+surfaceArt[id]+'"/></svg>';}
-const stickerView=position=>['left','right','front','rear','under'].includes(position)?position:'sticker';
+const stickerView=position=>['left','right','front','rear','under','mid-body','rear-deck'].includes(position)?position:'sticker';
 const meshCategories=new Set(['emblem','accessory','front','rear']);
 const workshopGlyphs={
  original:'<path fill="#506786" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path d="m10 12 7 4 10-1m-10 1-4 7"/>',

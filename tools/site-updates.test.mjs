@@ -25,6 +25,7 @@ class FakeElement {
   close() { this.open = false; }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   focus() { this.document.activeElement = this; }
+  animate(frames, options) { (this.animations ??= []).push({frames, options}); }
 }
 class FakeDocument extends EventTarget {
   constructor() {
@@ -53,9 +54,23 @@ test('checks same-origin version and offers reload only from a user-clickable no
   const h = harness(); await h.handle.check();
   assert.equal(h.calls, 1); assert.equal(h.document.button.textContent, 'Update available');
   assert.equal(h.document.button.dataset.siteUpdate, 'available');
+  const badge=h.document.button;
+  assert.equal(badge.animations?.length,1);
+  h.setTime(1000+30*60*1000);await h.handle.check();
+  assert.equal(h.document.button,badge);
+  assert.equal(badge.animations.length,1);
   assert.equal(h.reloadChecks, 0, 'finding an update must not interrupt the current session');
   h.document.button.listeners.click();
   assert.equal(h.reloadChecks, 1, 'reload safety is checked only after an explicit click');
+  h.handle.dispose();
+});
+
+test('does not animate the update badge with reduced motion', async () => {
+  const document=new FakeDocument();
+  document.defaultView=Object.assign(new EventTarget(),{matchMedia: query=>({matches:query==='(prefers-reduced-motion: reduce)'})});
+  const h=harness({document});await h.handle.check();
+  assert.equal(document.button.dataset.siteUpdate,'available');
+  assert.equal(document.button.animations,undefined);
   h.handle.dispose();
 });
 
@@ -1338,7 +1353,7 @@ test('a bot-published snapshot gets its own one-time notice without a client rel
     sel==='meta[name="polytrack-snapshot-stats"]'?{content:JSON.stringify({generation:93,baseGeneration:92,racers:108,boards:1,results:649})}:null;
   const notice=installInstalledRevisionNotice({document:d,storage,revision:396,release:{number:467,notes:['Manual-only notes.']},isReady:()=>true});
   assert.equal(d.dialog.children[0].textContent,'New snapshot 93');
-  assert.match(d.dialog.children[1].children[0].textContent,/108 new racers, 1 new track board, 649 new playable results/);
+  assert.match(d.dialog.children[1].children[0].textContent,/108 new racers, 1 new ranked track, and 649 new race times/);
   assert.equal(d.dialog.dataset.siteInstalledRelease,undefined);
   d.dialog.children.at(-1).listeners.click();
   assert.equal(state.get('polytrack-site-update-ack-snapshot-v1:93'),'acknowledged');

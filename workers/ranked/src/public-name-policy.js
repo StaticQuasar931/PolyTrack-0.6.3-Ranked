@@ -103,7 +103,7 @@ const DEFAULT_NAME_BLOCKLIST = ["admin","moderator","owner","staff","support","s
 const MODERN_HIGH_RISK_TERMS = ['merde','mierda','scheisse','kurwa','pendejo','cabron','joder','chingada','cocaine','heroin','fentanyl','gooning','gooner','goonette','edging','edgeplay','gyatt','gyat','onlyfans','ofans','discordmod','heilhitler','gasjews','gas all jews','sieg heil','killall','kms','killyourself','kys','unaliveyourself','csam','cporn','childlover','minorlover','lolicon','shotacon'];
 const COMPACT_SEVERE_TERMS = ['nigger','niggre','nigre','nigga','niggah','niglet','faggot','chink','kike','spic','wetback','beaner','coon','gook','tranny','fuck','bitch','cunt','rape','rapist','pedophile','molester','childporn','csam','killyourself','whitepower','heilhitler','siegheil','gasalljews','bestiality','necrophilia','jailbait','cumdumpster','pornhub','onlyfans','gooning','masterbait','masterbaiting','masterofbaiting'];
 const RESERVED_NAME_TERMS = ['admin','administrator','moderator','modteam','owner','staff','support','system','developer','devteam','verified','official','staticquasar931'];
-const TARGETED_EXACT_NAMES = Object.freeze(['Kim Jong Un','Ngrachio445','Nigervaan','Stephen Hawking','Remlover','porp']
+const TARGETED_EXACT_NAMES = Object.freeze(['Kim Jong Un','Ngrachio445','Nigervaan','Stephen Hawking','Remlover','porp','nga','ngga']
   .map(value => normalizeNameForCheck(value).replace(/ /g, '')));
 
 export function sanitizeDisplayName(value) {
@@ -304,6 +304,8 @@ export function moderatePublicName(value) {
   const decision = (blocked, reason = '', match = null) => ({ blocked, reason, clean, match });
   const detail = (type, term, normalizedValue = normalized) => ({ type, term, normalized: normalizedValue });
   if (isRequestedBlockedName(value)) return decision(true, 'targeted-exact-name', detail('targeted-exact-name', compact));
+  const shortSlur=tokens.find(token=>/^(?:nga|ngga)$/.test(token));
+  if(shortSlur)return decision(true,'unsafe-word',detail('unsafe-word',shortSlur));
   const promotion=promotionMatch(comparison,normalized,compact);
   if(promotion)return decision(true,'promotion',detail('promotion',promotion));
   const political=POLITICAL_IDENTIFIERS.find(term=>compact.includes(term));
