@@ -58,7 +58,7 @@ async function sourceFile(packageDirectory, index, logical) {
   return {decoded, encodedSha256: entry.sha256};
 }
 
-export async function reconcileSupersededPendingPlaybacks({root, directory, expectedIndexSha256} = {}) {
+export async function reconcileSupersededPendingPlaybacks({root, directory, expectedIndexSha256, allowUnpublishedPending = false} = {}) {
   if (!path.isAbsolute(root || '') || !path.isAbsolute(directory || '') || !ID.test(expectedIndexSha256 || ''))
     throw Error('Explicit paths and trusted snapshot index hash required');
 
@@ -179,6 +179,9 @@ export async function reconcileSupersededPendingPlaybacks({root, directory, expe
           accountId: replacement.accountId, timeMs: replacement.timeMs, submittedAt: replacement.submittedAt}});
     }
   }
+  // All previously public pending media was checked above. Do not count new,
+  // unavailable pending previews as published outcomes.
+  if (allowUnpublishedPending === true && actions.length === 0) return {deferredUnpublishedPending:coverage.missing, backendReads:0, backendWrites:0};
   if (actions.length !== coverage.missing) throw Error(`Resolved ${actions.length} pending rows; expected exactly ${coverage.missing}`);
 
   const originalCoverage = structuredClone(coverage);

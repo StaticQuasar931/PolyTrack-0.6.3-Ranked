@@ -654,6 +654,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
 
   const overall = await readJsonIfPresent(path.join(stagingDirectory, 'overall.json'));
   let manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
+  let deferredUnpublishedPending = 0;
   if (manifest?.pendingPlaybackCoverage?.missing > 0 &&
       manifest.pendingPlaybackCoverage.scope === 'selected-saved-event-boards') {
     const previous = await readJsonIfPresent(path.join(absoluteRoot, 'snapshot-current.json'));
@@ -661,7 +662,9 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       const indexBytes = await readPrivateSnapshotIndex(path.join(absoluteRoot, previous.currentdir, 'index.json'));
       const {reconcileSupersededPendingPlaybacks} = await import('./reconcile-superseded-pending-playbacks.mjs');
       const recovered = await reconcileSupersededPendingPlaybacks({root:absoluteRoot, directory:stagingDirectory,
-        expectedIndexSha256:sha256(indexBytes)});
+        expectedIndexSha256:sha256(indexBytes), allowUnpublishedPending:!offline && authority==='snapshot-native' &&
+          env.GITHUB_EVENT_NAME==='workflow_dispatch' && replayDocumentLimit===1000 && !fullPublic});
+      deferredUnpublishedPending = recovered.deferredUnpublishedPending ?? 0;
       log(JSON.stringify({supersededPendingReplayRecovery:recovered}));
       manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
     }
@@ -671,7 +674,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   let coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);
   // Keep the pre-validation checkpoint if either existing publication barrier fails.
   await fs.writeFile(path.join(stagingDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`);
-  const replay = await assertSnapshotReplayCompleteness(stagingDirectory);
+  const replay = await assertSnapshotReplayCompleteness(stagingDirectory,{deferredUnpublishedPending});
   const profiles = await buildProfileSnapshotResults(stagingDirectory);
   coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary,
     {replay, profiles, parsedManifestJsonSha256: sha256(JSON.stringify(manifest))});

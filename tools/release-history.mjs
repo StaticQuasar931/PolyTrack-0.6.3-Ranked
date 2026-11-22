@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 465,
+    "number": 466,
     "version": "0.6.3",
-    "revision": 394,
+    "revision": 395,
     "notes": [
-      "Ranking updates keep the last published track results visible while a newer board is being checked."
+      "New rankings can publish while unavailable replay previews wait for their own checks."
     ]
   },
   "entries": [
+    {
+      "number": 465,
+      "title": "Keep published ranking boards during refresh",
+      "commit": "6b7a37372f6ec85f36351e7d0701fb089109fe43",
+      "committedAt": "2026-11-22T21:43:55.000Z",
+      "notes": [
+        "Ranking updates keep the last published track results visible while a newer board is being checked."
+      ]
+    },
     {
       "number": 464,
       "title": "Batch ranking snapshot reconciliation",
@@ -185,16 +194,6 @@ const historyData = {
       "notes": [
         "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
         "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
-      ]
-    },
-    {
-      "number": 444,
-      "title": "Improve Workshop controls and responsive Community Events",
-      "commit": "e259e45b738c9482af6a8d9517762091e346040f",
-      "committedAt": "2026-11-22T01:10:38.000Z",
-      "notes": [
-        "Workshop now opens beside the car. Choose sticker placement directly and preview Pit Arrow and Night Grid.",
-        "Browse the Style Shop without connecting. Home and Community Events fit smaller screens better, and event rows show their Event RP status."
       ]
     }
   ],

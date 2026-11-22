@@ -135,11 +135,15 @@ export async function snapshotReplayCompleteness(directory){
   return report;
 }
 
-export async function assertSnapshotReplayCompleteness(directory){
+export async function assertSnapshotReplayCompleteness(directory,{deferredUnpublishedPending=0}={}){
   const coverage=await snapshotReplayCompleteness(directory);
-  if(!coverage.complete){
+  const onlyUnpublished = Number.isSafeInteger(deferredUnpublishedPending) && deferredUnpublishedPending > 0 &&
+    coverage.pendingCapture?.missing === deferredUnpublishedPending && coverage.pendingCapture?.complete === false &&
+    coverage.referencedBoardsMissing === 0 && coverage.normal.missing === 0 && coverage.normal.invalid === 0 &&
+    coverage.derived.missing === 0 && coverage.derived.invalid === 0 && coverage.events.complete === true;
+  if(!coverage.complete && !onlyUnpublished){
     const error=Error(`Snapshot publication blocked: normal replays missing ${coverage.normal.missing}, invalid ${coverage.normal.invalid}; event replays missing ${coverage.events.missing}, invalid ${coverage.events.invalid}; captured pending inputs missing ${coverage.pendingCapture?.missing||0}; derived replays missing ${coverage.derived.missing}, invalid ${coverage.derived.invalid}; referenced boards missing ${coverage.referencedBoardsMissing}. Retain the previous snapshot and resume from the captured checkpoint; do not recapture automatically.`);
     error.code='SNAPSHOT_REPLAYS_INCOMPLETE';error.coverage=coverage;throw error;
   }
-  return coverage;
+  return onlyUnpublished ? {...coverage, deferredUnpublishedPending, publishedRowsComplete:true} : coverage;
 }

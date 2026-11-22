@@ -300,6 +300,7 @@ jobs:
           const encryptCapture=options=>encryptCaptureRecovery({...options,attempt});
           const captureCheckpoint=async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCapture({directory,sourceCommit,outputFile,recipientPublicKey})}));
           const nativePhaseOptions={...(process.env.VERIFICATION_AUTHORITY==='snapshot-native'?{maxJobs:10000,maxRuntimeMs:1500000}:{}),
+            ...(!oneOff&&replayLimit===1000&&process.env.GITHUB_EVENT_NAME==='workflow_dispatch'?{maxRuntimeMs:300000}:{}),
             progressCheckpoint:async({directory,sourceBinding,ledgerManifestHash,sequence})=>console.log(JSON.stringify({nativeProgress:await encryptCaptureRecovery({directory,attempt,
               sourceCommit:sourceBinding.sourceCommit,sourceBinding,ledgerManifestHash,phase:'native-proofs',recipientPublicKey,
               outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-native-progress-'+String(sequence).padStart(2,'0')+'.ptenc')})})),

@@ -184,3 +184,15 @@ test('manifest references cannot omit an entire advertised board to evade replay
   await f.put('manifest.json',{tracks:{[trackId]:{path:null}},events:{}});
   await assertSnapshotReplayCompleteness(f.root);
 });
+
+test('explicit unpublished pending coverage does not excuse an advertised recording',async t=>{
+  const f=await fixture(t);
+  const pendingPlaybackCoverage={known:2,published:0,missing:2,failed:0,deferred:2,complete:false};
+  await f.put('manifest.json',{pendingPlaybackCoverage});
+  const report=await assertSnapshotReplayCompleteness(f.root,{deferredUnpublishedPending:2});
+  assert.equal(report.complete,false);
+  assert.equal(report.publishedRowsComplete,true);
+  await assert.rejects(assertSnapshotReplayCompleteness(f.root,{deferredUnpublishedPending:1}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
+  await f.normal();
+  await assert.rejects(assertSnapshotReplayCompleteness(f.root,{deferredUnpublishedPending:2}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
+});

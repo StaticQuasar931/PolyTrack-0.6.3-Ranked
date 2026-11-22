@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 465,
+  "number": 466,
   "version": "0.6.3",
-  "revision": 394,
+  "revision": 395,
   "notes": [
-    "Ranking updates keep the last published track results visible while a newer board is being checked."
+    "New rankings can publish while unavailable replay previews wait for their own checks."
   ],
-  "preparedAt": "2026-11-22T21:43:53.287Z",
-  "committedAt": "2026-11-22T21:43:55.000Z"
+  "preparedAt": "2026-11-22T22:10:06.002Z",
+  "committedAt": "2026-11-22T22:10:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

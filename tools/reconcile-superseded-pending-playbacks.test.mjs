@@ -55,7 +55,7 @@ async function fixture(t, options = {}) {
       replay, carStyle: '', pending: false, verified: true, eventRpEligible: true};
     await fs.writeFile(path.join(directory, `event-replays/${period.id}/${row.accountId}.json`), JSON.stringify(currentValue));
   }
-  const priorBoard = {period, entries: [], pendingPlaybacks: oldRows};
+  const priorBoard = {period, entries: [], pendingPlaybacks: options.noPriorWaiting ? [] : oldRows};
   const priorBoardBytes = Buffer.from(JSON.stringify(priorBoard));
   const boardEncoded = Buffer.from(await encodeSnapshot(priorBoard));
   const boardDigest = sha(boardEncoded);
@@ -161,3 +161,17 @@ for (const [label, options, pattern] of [
       `event-playbacks/${f.period.id}/${row.runId}.json`)), {code: 'ENOENT'});
   });
 }
+
+test('manual deferral does not count new unavailable previews as published', async t => {
+  const f=await fixture(t,{noPriorWaiting:true});
+  const original=await fs.readFile(f.manifestPath,'utf8');
+  await assert.rejects(reconcileSupersededPendingPlaybacks(f),/Resolved 0 pending rows/);
+  const result=await reconcileSupersededPendingPlaybacks({...f,allowUnpublishedPending:true});
+  assert.equal(result.deferredUnpublishedPending,7);
+  assert.equal(await fs.readFile(f.manifestPath,'utf8'),original);
+});
+
+test('manual deferral does not bypass missing previously published waiting replays', async t => {
+  const f=await fixture(t,{holdIndex:7});
+  await assert.rejects(reconcileSupersededPendingPlaybacks({...f,allowUnpublishedPending:true}),/No later faster verified replacement/);
+});
