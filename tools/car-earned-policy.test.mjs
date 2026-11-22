@@ -13,3 +13,12 @@ test('legacy front and independent rear reflector slots both require five confir
  }
  row={userId:id,raceCount:5,medals:{gold:0,silver:0,bronze:0}};assert(!allow({accountId:id,category:'accessory',id:'crown'}));assert(!allow({accountId:id,category:'emblem',id:'crest'}));
 });
+
+import {OWNER_CHALLENGE_ACCOUNT_ID} from './achievement-recommendations.mjs';
+test('Owner Challenge Workshop rewards require the correct published challenge and tier',()=>{
+ const proof={targetAccountId:OWNER_CHALLENGE_ACCOUNT_ID,count:1},row={userId:id,serverAchievements:{beatOwner:proof}};
+ const allow=createCarEquipPolicy({getAccountId:()=>id,getPublishedProfile:()=>row,isFree:()=>true});
+ const pin={accountId:id,category:'emblem',id:'rival-pin'},beacon={accountId:id,category:'accessory',id:'rival-beacon'};
+ assert(!allow(pin));proof.count=2;assert(allow(pin));assert(!allow(beacon));proof.count=5;assert(allow(beacon));
+ row.localOnly=true;assert(!allow(pin));delete row.localOnly;proof.targetAccountId=other;assert(!allow(pin));assert(!allow(beacon));
+});

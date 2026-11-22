@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {buildAchievementProgress,buildAchievementJournalModel,sortAchievementJournalItems,renderAchievementJournal} from './achievement-journal.mjs';
 
+import {OWNER_CHALLENGE_ACCOUNT_ID} from './achievement-recommendations.mjs';
+
 const patch = fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const catalogText = patch.match(/const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\n  \});/)[1];
 const cosmetics = JSON.parse(JSON.stringify(vm.runInNewContext(`(${catalogText})`)));
@@ -116,7 +118,7 @@ test('expanded details show exact goals and actual catalog rewards without propo
 test('rewarded journal excludes all proposal tiers and keeps exact local observations separate',()=>{
  const input={cosmetics,progress:{confirmed:{...profile,extraCount:0},local:{practiceFinishes:17,extraCount:25,historyVisits:10,teleportCount:100}}};
  const before=JSON.stringify(input),model=buildAchievementJournalModel(input);
- assert.ok(model.milestones.length>0);assert.ok(model.milestones.every(item=>item.source==='catalog'&&item.rewards.length>0||item.source==='currency'&&item.reward.amount>0&&!item.earned));
+ assert.ok(model.milestones.length>0);assert.ok(model.milestones.every(item=>(item.source==='catalog'||item.source==='workshop')&&item.rewards.length>0||item.source==='currency'&&item.reward.amount>0&&!item.earned));
  assert.ok(!model.milestones.some(item=>item.id.startsWith('achievement:v1:')));
  assert.equal(model.counts.local,0);assert.equal(model.milestones.find(x=>x.id==='discovery:extra:1').earned,false);
  assert.deepEqual(model.observations,[{metric:'practiceFinishes',value:17},{metric:'extraCount',value:25}]);
@@ -165,10 +167,10 @@ test('all real tiers are discoverable by default and goals never masquerade as u
  const ids=goals.flatMap(row=>row.rewards.map(reward=>reward.kind+':'+reward.id));
  assert.equal(new Set(ids).size,unlocked);
  const html=renderAchievementJournal({cosmetics});
- assert.ok(html.includes('22 cosmetic goals reached; '+unlocked+' cosmetic unlocks across these goals; 7 coin milestones'));
+ assert.ok(html.includes('24 cosmetic goals reached; '+(unlocked+2)+' cosmetic unlocks across these goals; 7 coin milestones'));
  assert.match(html,/data-aj-active-family="all"/);
  assert.match(html,/data-aj-filter="all" aria-pressed="true"/);
- assert.equal((html.match(/data-aj-node="/g)||[]).length,29);
+ assert.equal((html.match(/data-aj-node="/g)||[]).length,31);
 });
 test('shared title and style bonuses remain one payment condition, not coins per cosmetic',()=>{
  const model=buildAchievementJournalModel({cosmetics,progress:{confirmed:{raceCount:5}}});
@@ -177,4 +179,13 @@ test('shared title and style bonuses remain one payment condition, not coins per
  const html=renderAchievementJournal({model});
  assert.match(html,/shared bonus/);assert.match(html,/Shared title[/]style bonus, paid once/);
  assert.match(html,/Cosmetic unlocked does not mean coins paid/);
+});
+
+test('Owner Challenge shows four stages without awarding a duplicate coin or cosmetic',()=>{
+ const confirmed={serverAchievements:{beatOwner:{count:2,targetAccountId:OWNER_CHALLENGE_ACCOUNT_ID}},cosmeticUnlocks:['emblem:target']};
+ const model=buildAchievementJournalModel({cosmetics,progress:{confirmed,local:{ownerCheckpoint:99}}});
+ const stages=model.branches.find(branch=>branch.id==='owner').milestones.sort((a,b)=>a.target-b.target);
+ assert.deepEqual(stages.map(item=>[item.target,item.earned,item.rewards.length,item.coinReward?.amount??0]),[[1,true,1,20],[2,true,1,0],[3,false,1,40],[5,false,1,0]]);
+ assert.deepEqual(model.nextIds.filter(id=>stages.some(item=>item.id===id)),[stages[2].id]);
+ assert.match(renderAchievementJournal({model}),/Owner Challenge/);
 });

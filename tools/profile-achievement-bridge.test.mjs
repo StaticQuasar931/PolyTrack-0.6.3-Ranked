@@ -22,7 +22,7 @@ before(async () => {
     if (url.pathname === '/') {
       res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PolyTrack native racer hub fixture</title><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#16254c;color:white;font-family:ForcedSquare,sans-serif}</style><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><div class="overall-profile-card"><button id="profile-return" type="button">Racer profile</button><main id="content"></main></div></div></div></html>');return;
     }
-    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-journal-currency|achievement-coin-schedule|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/tools/studio-art-polish.css','/tools/profile-shop-art.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
+    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-journal-currency|achievement-coin-schedule|achievement-recommendations|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/tools/studio-art-polish.css','/tools/profile-shop-art.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
     if (!allowed) {res.writeHead(404).end();return;}
     const gate = gates.get(url.searchParams.get('v'));
     if (url.pathname === '/tools/achievement-journal.mjs' && gate) {gate.started();await gate.wait;}

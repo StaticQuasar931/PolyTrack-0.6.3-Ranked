@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 451,
+    "number": 452,
     "version": "0.6.3",
-    "revision": 384,
+    "revision": 385,
     "notes": [
-      "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
-      "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
-      "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
+      "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
+      "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
+      "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
     ]
   },
   "entries": [
+    {
+      "number": 451,
+      "title": "Add Total RP plates and six Workshop styles",
+      "commit": "7161a7781a4cd2cdd6cb1699c8d528d4059ab803",
+      "committedAt": "2026-11-22T04:25:16.000Z",
+      "notes": [
+        "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
+        "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
+        "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
+      ]
+    },
     {
       "number": 450,
       "title": "Keep the Style Shop compatible across game versions",
@@ -192,16 +203,6 @@
       "notes": [
         "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
         "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
-      ]
-    },
-    {
-      "number": 425,
-      "title": "Restore the weekly card and extend offline verification",
-      "commit": "1598fdd1bbde28c9496b6ff11ce7fb7c2241ad16",
-      "committedAt": "2026-11-16T07:48:40.000Z",
-      "notes": [
-        "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
-        "Made the Rolling Hills Racer reward and no-reset message easier to read."
       ]
     }
   ],

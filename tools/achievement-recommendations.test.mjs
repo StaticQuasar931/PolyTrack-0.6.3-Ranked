@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {recommendAchievementTracks as recommend} from './achievement-recommendations.mjs';
+import {recommendAchievementTracks as recommend,recommendOwnerChallengeTracks,OWNER_CHALLENGE_ACCOUNT_ID,OWNER_CHALLENGE_ROLLING_TRACK_ID} from './achievement-recommendations.mjs';
 const id = n => n.toString(16).padStart(64, '0');
 const accountId = 'a'.repeat(64), day = '2026-11-14', at = Date.parse(day + 'T00:00:00Z');
 const track = (n, difficulty = 2, extra = {}) => ({trackId:id(n),name:'Track '+n,difficulty,...extra});
@@ -102,4 +102,17 @@ test('no ambient IO clock randomness or input mutation; returned objects do not 
  assert.notEqual(recommend(input)[0].name,'changed');
  const source=readFileSync(new URL('./achievement-recommendations.mjs',import.meta.url),'utf8');
  assert.doesNotMatch(source,/^\s*import\s/m);assert.doesNotMatch(source,/\b(?:localStorage|sessionStorage|setInterval|setTimeout)\b/);
+});
+
+test('Owner Challenge keeps only exact verified owner PBs on eligible tracks and skips verified ties',async()=>{
+ const {OWNER_PUBLIC_ID,SPECIAL_ROLLING_HILLS_TRACK_ID}=await import('../workers/ranked/src/server-achievements.js');
+ assert.equal(OWNER_CHALLENGE_ACCOUNT_ID,OWNER_PUBLIC_ID);assert.equal(OWNER_CHALLENGE_ROLLING_TRACK_ID,SPECIAL_ROLLING_HILLS_TRACK_ID);
+ const tracks=[...Array.from({length:6},(_,i)=>({id:id(i+1),name:'Official '+i,type:'official'})),{id:id(7),name:'Regular community',type:'community'},{id:OWNER_CHALLENGE_ROLLING_TRACK_ID,name:'Rolling Hills Racer',type:'community'}];
+ const pb=(trackId,timeMs,extra={})=>({trackId,timeMs,integrityVerified:true,runVerified:true,...extra});
+ const ownerProfile={accountId:OWNER_PUBLIC_ID,results:[pb(id(1),20000),pb(id(2),16000),pb(id(3),14000,{integrityVerified:false}),pb(id(4),12000),pb(id(4),13000),pb(id(5),18000,{runVerified:false}),pb(id(6),13000),pb(id(7),20000),pb(OWNER_CHALLENGE_ROLLING_TRACK_ID,21000)]};
+ const racerProfile={accountId,results:[pb(id(1),20000),pb(id(2),16300),pb(id(6),12900,{runVerified:false})]};
+ const rows=recommendOwnerChallengeTracks({accountId,ownerProfile,racerProfile,tracks});
+ assert.deepEqual(rows.map(row=>row.trackId),[id(2),id(6),OWNER_CHALLENGE_ROLLING_TRACK_ID]);assert.match(rows[0].reason,/16.000s.*0.300s to tie/);
+ assert.deepEqual(recommendOwnerChallengeTracks({accountId,ownerProfile:{...ownerProfile,accountId},racerProfile,tracks}),[]);
+ assert.deepEqual(recommendOwnerChallengeTracks({accountId:OWNER_PUBLIC_ID,ownerProfile,tracks}),[]);
 });

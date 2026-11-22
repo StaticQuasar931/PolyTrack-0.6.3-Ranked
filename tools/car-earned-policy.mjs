@@ -1,5 +1,7 @@
 const {workshopStickerOffer}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
+const {OWNER_CHALLENGE_WORKSHOP_REWARDS,confirmedOwnerChallengeCount}=await import(new URL('./achievement-recommendations.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+
 /** Local visual eligibility from owner-scoped Shop UI state or published earned progress. */
 export function createCarEquipPolicy({getAccountId,getPublishedProfile,getPublishedRank,isFree,ownsForUi}={}){
  if([getAccountId,getPublishedProfile,isFree].some(fn=>typeof fn!=='function'))throw TypeError('Car policy adapters required');
@@ -11,8 +13,10 @@ export function createCarEquipPolicy({getAccountId,getPublishedProfile,getPublis
   if(offer)return ownsForUi?.(choice.accountId,offer.grants[0].slot+':'+choice.id)===true;
   const reflector=(choice.category==='front'||choice.category==='rear')&&choice.id==='rearbar';
   const podium=choice.category==='emblem'&&choice.id==='crest'||choice.category==='accessory'&&choice.id==='crown'||choice.category==='sticker'&&choice.id==='laurel';
-  if(!reflector&&!podium&&isFree(choice)===true)return true;
+  const ownerReward=OWNER_CHALLENGE_WORKSHOP_REWARDS.find(item=>item.category===choice.category&&item.id===choice.id);
+  if(!reflector&&!podium&&!ownerReward&&isFree(choice)===true)return true;
   const row=profile(choice.accountId);if(!row)return false;
+  if(ownerReward)return (confirmedOwnerChallengeCount(row)??0)>=ownerReward.target;
   if(reflector)return Number.isSafeInteger(row.raceCount)&&row.raceCount>=5;
   if(podium)return tier(row)!==null;
   return false;

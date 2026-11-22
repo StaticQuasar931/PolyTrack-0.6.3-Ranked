@@ -16,7 +16,7 @@ before(async()=>{
  server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/tools/achievement-journal.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#172b58}#host{--profile-accent:#edbe81;--profile-pattern:repeating-linear-gradient(45deg,red 0 20px,lime 20px 40px)}</style><main id="host"></main></html>');return;}
-  if(!['/tools/achievement-journal.mjs','/tools/achievement-journal-currency.mjs','/tools/achievement-coin-schedule.mjs','/tools/achievement-journal.css','/forced_square.woff2'].includes(url.pathname)){res.writeHead(404).end();return;}
+  if(!['/tools/achievement-journal.mjs','/tools/achievement-journal-currency.mjs','/tools/achievement-coin-schedule.mjs','/tools/achievement-recommendations.mjs','/tools/achievement-journal.css','/forced_square.woff2'].includes(url.pathname)){res.writeHead(404).end();return;}
   res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css':url.pathname.endsWith('.mjs')?'text/javascript':'font/woff2');
   try{res.end(await fs.readFile(path.join(root,url.pathname.slice(1))));}catch{res.writeHead(404).end();}
  });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;
@@ -45,7 +45,7 @@ test('only actual catalog unlocks are achievements; measured device progress sta
  const page=await fixture(t);await mouse(page,'[data-aj-filter="all"]');await mouse(page,'[data-aj-family="all"]');
  const model=await page.evaluate(()=>api.buildAchievementJournalModel(input));
  assert.equal(await page.locator('[data-aj-node]').count(),model.counts.total);
- assert.ok(model.milestones.every(x=>x.rewards.length>0&&x.source==='catalog'||x.source==='currency'&&x.reward.amount>0&&!x.earned));
+ assert.ok(model.milestones.every(x=>x.rewards.length>0&&(x.source==='catalog'||x.source==='workshop')||x.source==='currency'&&x.reward.amount>0&&!x.earned));
  assert.equal(await page.locator('[data-aj-node^="achievement:v1:"]').count(),0);
  await mouse(page,'.aj-local-tools>summary');await mouse(page,'.aj-device-progress summary');
  assert.match(await page.locator('.aj-device-progress').innerText(),/Saved practice finishes\s+17/);
@@ -199,7 +199,7 @@ test('missing casual completion count still exposes Style Coins and the first Sh
 
 test('default journal exposes every goal tier with separate unlock counts', {timeout:20000},async t=>{
  const page=await fixture(t);
- assert.equal(await page.locator('[data-aj-node]:visible').count(),29);
+ assert.equal(await page.locator('[data-aj-node]:visible').count(),31);
  assert.match(await page.locator('.aj-summary').innerText(),/cosmetic unlocks across these goals; 7 coin milestones/);
  assert.equal(await page.locator('[data-aj-family="all"]').getAttribute('aria-pressed'),'true');
  await mouse(page,'[data-aj-select="style:5"]');
@@ -217,4 +217,15 @@ test('completed cosmetic goals do not request track suggestions', {timeout:15000
  assert.equal(await page.evaluate(()=>recommendationCalls),0);
  assert.equal(await page.locator('.aj-recommendations').count(),0);
  page.checkClean();
+});
+
+test('Owner Challenge shows verified track suggestions and calls track preview',{timeout:15000},async t=>{
+ const page=await fixture(t);
+ await mouse(page,'[data-aj-family="owner"]');
+ await page.evaluate(()=>{dispose();window.ownerPreview=[];dispose=api.bindAchievementJournal(document.querySelector('#host'),{getRecommendations:item=>item.metric==='ownerCheckpoint'?[{trackId:'eligible-owner-track',name:'Summer 1',reason:'Verified owner PB: 22.010s.'}]:[],onRecommendedTrack:id=>ownerPreview.push(id)});});
+ await mouse(page,'[data-aj-select="owner:checkpoint:2"]');
+ await page.locator('[data-aj-recommended-track="eligible-owner-track"]').waitFor();
+ assert.match(await page.locator('.aj-recommendations').innerText(),/Tracks with a verified owner PB/);
+ await mouse(page,'[data-aj-recommended-track="eligible-owner-track"]');
+ assert.deepEqual(await page.evaluate(()=>ownerPreview),['eligible-owner-track']);page.checkClean();
 });

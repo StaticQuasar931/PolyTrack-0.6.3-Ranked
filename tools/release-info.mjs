@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 451,
+  "number": 452,
   "version": "0.6.3",
-  "revision": 384,
+  "revision": 385,
   "notes": [
-    "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
-    "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
-    "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
+    "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
+    "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
+    "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
   ],
-  "preparedAt": "2026-11-22T04:25:14.716Z",
-  "committedAt": "2026-11-22T04:25:16.000Z"
+  "preparedAt": "2026-11-22T04:42:24.857Z",
+  "committedAt": "2026-11-22T04:43:38.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
