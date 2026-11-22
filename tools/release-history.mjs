@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 470,
+    "number": 471,
     "version": "0.6.3",
-    "revision": 398,
+    "revision": 399,
     "notes": [
-      "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
+      "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
     ]
   },
   "entries": [
+    {
+      "number": 470,
+      "title": "Show new results in snapshot updates",
+      "commit": "ffa847fb09168dd377ea6d40f41538a77546686e",
+      "committedAt": "2026-11-22T23:13:39.000Z",
+      "notes": [
+        "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
+      ]
+    },
     {
       "number": 469,
       "title": "Announce new ranking snapshots in game",
@@ -181,16 +190,6 @@ const historyData = {
         "See real part previews in the Workshop and place larger stickers, including a custom race number, on more sides of the car.",
         "Try new paint finishes and fitted parts. Podium crowns match your best confirmed medal.",
         "Event personal bests can recover from a full browser cache without removing pending runs or saved replays."
-      ]
-    },
-    {
-      "number": 448,
-      "title": "Make the Garage Workshop easier to use",
-      "commit": "2cdbd33e91ff9a1f46d7b6ff90652374b7a8ef60",
-      "committedAt": "2026-11-22T03:00:28.000Z",
-      "notes": [
-        "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
-        "The car stays in view beside the Workshop, including on narrow screens."
       ]
     }
   ],

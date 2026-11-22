@@ -121,9 +121,12 @@ function installedSnapshotSummary(document,generation) {
     if(typeof raw!=='string'||raw.length>300)return '';
     const data=JSON.parse(raw);
     if(data?.generation!==generation||!Number.isSafeInteger(data.baseGeneration)||data.baseGeneration<1||data.baseGeneration>=generation)return '';
-    const counts=[[data.racers,'racer','racers'],[data.boards,'track board','track boards'],[data.results,'playable result','playable results']];
+    const counts=[[data.racers,'racer','racers'],[data.boards,'ranked track','ranked tracks'],[data.results,'race time','race times']];
     if(!counts.every(([value])=>Number.isSafeInteger(value)&&value>=0&&value<=1000000))return '';
-    return counts.map(([value,one,many])=>value.toLocaleString()+' new '+(value===1?one:many)).join(', ')+'.';
+    const additions=counts.filter(([value])=>value>0).map(([value,one,many])=>value.toLocaleString()+' new '+(value===1?one:many));
+    if(!additions.length)return '';
+    if(additions.length<3)return additions.join(' and ')+'.';
+    return additions.slice(0,-1).join(', ')+', and '+additions.at(-1)+'.';
   }catch{return '';}
 }
 
@@ -819,6 +822,15 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
+      try {
+        if (!document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+          button.animate?.([
+            {opacity:0, transform:'translateY(8px) scale(.97)'},
+            {opacity:1, transform:'translateY(-2px) scale(1.025)', offset:.72},
+            {opacity:1, transform:'none'}
+          ], {duration:380, easing:'ease-out'});
+        }
+      } catch { /* The update remains available without animation. */ }
       dismissalMenu = bindUpdateDismissal({document,button,preference:reminder,enabled:()=>!criticalUpdate(),
         onDismiss:()=>{explicitOffer=false; button.hidden=true; button.style.display='none'; clearOldCopyNotice();
           const body=document.body, prior=body.getAttribute?.('tabindex'); body.setAttribute('tabindex','-1'); body.focus?.();
