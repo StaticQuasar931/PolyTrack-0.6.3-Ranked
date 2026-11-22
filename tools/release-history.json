@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 447,
+    "number": 448,
     "version": "0.6.3",
-    "revision": 380,
+    "revision": 381,
     "notes": [
-      "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
-      "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
+      "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
+      "The car stays in view beside the Workshop, including on narrow screens."
     ]
   },
   "entries": [
+    {
+      "number": 447,
+      "title": "Update garage layers independently and streamline Shop sync",
+      "commit": "2b01a46f300ae37ef2338511b7ac24884cfc91ac",
+      "committedAt": "2026-11-22T02:27:21.000Z",
+      "notes": [
+        "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
+        "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
+      ]
+    },
     {
       "number": 446,
       "title": "Check for updates sooner and equip two Garage stickers",
@@ -188,16 +198,6 @@
       "committedAt": "2026-11-16T06:12:34.000Z",
       "notes": [
         "Restored the wider Kodub weekly card so the title and event details have room to fit."
-      ]
-    },
-    {
-      "number": 420,
-      "title": "Highlight recent movement and restore weekly card proportions",
-      "commit": "fccb3dcd229ef0dd9647dfcc4d9778e3738b58d6",
-      "committedAt": "2026-11-16T05:58:34.000Z",
-      "notes": [
-        "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
-        "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
       ]
     }
   ],
