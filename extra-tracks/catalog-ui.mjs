@@ -121,7 +121,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   let featuredTimerGeneration = 0;
   let viewGeneration = 0;
   let returnFocus = null;
-  let submissionReturnFocus = null;
   let reportReturnFocus = null;
   let page = 1;
   let pendingAction = false;
@@ -181,24 +180,11 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   const headerMoreSummary = make('summary', '', 'More');
   const headerMoreActions = make('div', 'sq-extra-header-actions');
   headerMore.append(headerMoreSummary, headerMoreActions);
-  headerMore.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && headerMore.open) {
-      event.preventDefault(); event.stopPropagation?.(); headerMore.open = false; headerMoreSummary.focus();
-    }
-  });
-  const contribute = make('details', 'sq-extra-contribute');
-  const contributeSummary = make('summary', '', 'Contribute');
-  const contributeActions = make('div', 'sq-extra-contribute-actions');
-  contribute.append(contributeSummary, contributeActions);
-  contribute.addEventListener('toggle', () => {
-    if (contribute.open) headerMore.open = false;
-    else if (buildersView || builderProgram.open) showTrackView(false);
-  });
-  headerMore.addEventListener('toggle', () => { if (headerMore.open) contribute.open = false; });
   header.append(titleGroup);
+  let exportButton;
   if (typeof onExportFeedback === 'function') {
     let exportPending = false;
-    const exportButton = button('Export my picks', 'sq-extra-export', async () => {
+    exportButton = button('Export my picks', 'sq-extra-export', async () => {
       if (exportPending) return;
       exportPending = true;
       exportButton.disabled = true;
@@ -216,13 +202,10 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
         exportButton.removeAttribute('aria-busy');
       }
     });
-    headerMoreActions.append(exportButton);
   }
-  header.append(closeButton);
   dialog.append(header);
   const invitation = make('p', 'sq-extra-invite', 'Share a track with the community. Direct submissions get priority review; featuring is not guaranteed.');
   const submit = button('Submit a track', 'sq-extra-submit', () => {
-    submissionReturnFocus = document.activeElement;
     submissionGeneration++;
     submissionModal.hidden = false;
     syncDialogModality();
@@ -230,7 +213,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     syncSendControls();
     submitName.focus();
   });
-  closeButton.remove();
   const builderProgram = make('details', 'sq-extra-builder-submenu');
   const buildersButton = make('summary', 'sq-extra-builder-action', 'Builder program');
   buildersButton.setAttribute('aria-expanded', 'false');
@@ -243,8 +225,12 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   contactHost.id = 'sq-extra-contact-' + mountNumber; contactHost.hidden = true;
   buildersButton.setAttribute('aria-controls', contactHost.id);
   builderProgram.append(buildersButton, contactHost);
-  contributeActions.append(make('p', 'sq-extra-contribute-intro', 'Share a track or discuss creator credits.'), submit, builderProgram);
-  header.append(contribute, headerMore, closeButton);
+  headerMoreActions.append(submit, builderProgram);
+  if (exportButton) headerMoreActions.append(exportButton);
+  headerMore.addEventListener('toggle', () => {
+    if (!headerMore.open && (buildersView || builderProgram.open)) showTrackView(false);
+  });
+  header.append(headerMore, closeButton);
   const gradingHelp = make('details', 'sq-extra-grading-help');
   gradingHelp.append(make('summary', '', 'About ratings & difficulty'));
   gradingHelp.append(make('p', '', 'Rating measures track quality; Difficulty measures challenge, both out of 10. Published grades stay separate from your ratings saved on this device. Thanks to Window Cleaner for help with track gradings.'));
@@ -320,16 +306,19 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   const voteField = selectField('Votes', [['', 'Any votes'], ['positive', 'Net positive'], ['negative', 'Net negative'], ['voted', 'Has votes'], ['unvoted', 'No votes']]);
   reviewedControls.append(reviewedCaption, quickFilters, qualityField.label, reviewedDifficultyField.label, voteField.label);
   advancedControls.append(reviewedControls);
-  controls.append(searchLabel, sortControls, advancedToggle, advancedControls);
-  dialog.append(controls);
   const randomActions = make('div', 'sq-extra-random-actions');
+  randomActions.setAttribute('role', 'group');
+  randomActions.setAttribute('aria-label', 'Random track actions');
   const randomButton = button('Random', '', openPicker);
   randomButton.setAttribute('aria-label', 'Choose random track');
-  const quickPickButton = button('Quick pick', '', quickPick);
+  const quickPickButton = button('Quick pick', 'sq-extra-quick-pick', quickPick);
+  quickPickButton.setAttribute('aria-description', 'Open a random track preview using your last saved picker filters.');
   randomButton.setAttribute('aria-haspopup', 'dialog');
   randomButton.addEventListener('contextmenu', event => { event.preventDefault(); quickPick(); });
   quickPickButton.title = 'Open a random track preview with your last saved picker filters';
   randomActions.append(randomButton, quickPickButton);
+  controls.append(searchLabel, advancedToggle, randomActions, sortControls, advancedControls);
+  dialog.append(controls);
 
   const pickerModal = make('div', 'sq-extra-picker-modal');
   pickerModal.hidden = true;
@@ -427,7 +416,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     if (destroyed || !opened || pickerBusy) return;
     pickerPrefs = readPickerPrefs(pickerStorage(), pickerPrefs);
     for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
-    headerMore.open = false; contribute.open = false;
+    headerMore.open = false;
     if (buildersView || builderProgram.open) showTrackView(false);
     clearCardMenu();
     pickerReturnFocus = document.activeElement;
@@ -483,7 +472,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   count.setAttribute('role', 'status');
   count.setAttribute('aria-live', 'polite');
   search.setAttribute('aria-describedby', count.id);
-  summary.append(count, randomActions, gradingHelp);
+  summary.append(count, gradingHelp);
   const builderCreditsRoot = make('section', 'sq-extra-builder-slot');
   builderCreditsRoot.hidden = true;
   builderCreditsRoot.setAttribute('data-sq-slot', 'builder-credits');
@@ -1151,7 +1140,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     buildersButton.setAttribute('aria-busy', 'true');
     try {
       const {mountBuilderContact} = await import(new URL(`builder-contact.mjs${new URL(import.meta.url).search}`, import.meta.url));
-      if (destroyed || !opened || generation !== contactGeneration || !builderProgram.open || !contribute.open) return;
+      if (destroyed || !opened || generation !== contactGeneration || !builderProgram.open || !headerMore.open) return;
       if (!contactApi) { contactHost.replaceChildren(); contactApi = mountBuilderContact({document, root: contactHost, onBack: () => showTrackView()}); }
       clearCardMenu(); stopFeaturedTimer();
       buildersView = true;
@@ -1172,7 +1161,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     buildersButton.removeAttribute('aria-busy');
     buildersButton.setAttribute('aria-expanded', 'false');
     if (!destroyed && opened && refresh) {renderFeatured();scheduleFeaturedRefresh();}
-    if (restoreFocus) { contribute.open = true; buildersButton.focus({preventScroll: true}); }
+    if (restoreFocus) { headerMore.open = true; buildersButton.focus({preventScroll: true}); }
   }
 
   function renderFeatured(all = currentEntries()) {
@@ -1186,8 +1175,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     const picks = featured.hidden ? [] : featuredPicks(all, popularityCounts, now());
     featured.hidden = featured.hidden || !picks.length;
     if (featured.hidden) return;
-    const note = make('p', 'sq-extra-featured-note', 'Featured picks');
-    note.title = 'Picks rotate daily or weekly. Player counts and ratings appear when available.';
+    const note = make('h3', 'sq-extra-featured-note', 'Featured picks');
     note.title = 'Unavailable player counts and published ratings are omitted, never treated as zero. These are local editorial picks, not official events.';
     const tabs = make('div', 'sq-extra-featured-tabs');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Discover a track');
@@ -1241,7 +1229,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       const heading = make('div', 'sq-extra-pick-heading');
       heading.append(make('span', 'sq-extra-pick-label', label));
       content.append(heading);
-      const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
+      const name = make('h4', 'sq-extra-pick-name', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
       author.title = author.textContent; content.append(author);
       const reason = pick.kind === 'daily' ? (pick.pool === 'curated' ? 'Daily editorial catalog selection.' : 'Daily pick from published ratings.')
@@ -1267,7 +1255,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       const play = button(best !== null ? 'Race again' : 'Play track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
       play.setAttribute('aria-label', play.textContent + ': ' + text(pick.entry.name, 'Untitled track') + ' (' + label.toLowerCase() + ')');
       const period = make('time', 'sq-extra-pick-period', ['daily', 'roulette'].includes(pick.kind) ? 'Daily' : 'Weekly');
-      period.title = 'Next pick: ' + new Date(pick.endsAt).toLocaleString();
       period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
       period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
       heading.append(period);
@@ -1609,7 +1596,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function close() {
-    headerMore.open = false; contribute.open = false;
+    headerMore.open = false;
     if (!opened || destroyed) return;
     contactGeneration++;
     if (buildersView || builderProgram.open) showTrackView(false, false);
@@ -1638,8 +1625,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     submissionGeneration++;
     submissionModal.hidden = true;
     syncDialogModality();
-    if (restoreFocus) (submissionReturnFocus?.isConnected !== false ? submissionReturnFocus : submit)?.focus();
-    submissionReturnFocus = null;
+    if (restoreFocus) (headerMore.open ? submit : headerMoreSummary).focus();
   }
 
   function closeReport(restoreFocus = true) {
@@ -1669,9 +1655,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function onKeydown(event) {
-    if (opened && event.key === 'Escape' && headerMore.open && pickerModal.hidden && submissionModal.hidden && reportModal.hidden) {
-      event.preventDefault(); headerMore.open = false; headerMoreSummary.focus(); return;
-    }
     if (!opened) return;
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1680,7 +1663,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
       else if (buildersView || builderProgram.open) showTrackView();
-      else if (contribute.open) { contribute.open = false; contributeSummary.focus(); }
+      else if (headerMore.open) { headerMore.open = false; headerMoreSummary.focus(); }
       else close();
       return;
     }
@@ -1705,7 +1688,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       // The review popup is outside dialog; let native Tab move within it.
       return;
     }
-    if ((buildersView || contribute.open || headerMore.open || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
+    if ((buildersView || headerMore.open || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     const activeRating = document.activeElement?.getAttribute?.('data-quick-rating') === 'true';
@@ -1820,9 +1803,8 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
 
   function onCardMenuOutside(event) {
     if (opened && pickerModal.hidden && submissionModal.hidden && reportModal.hidden) {
-      if (headerMore.open && !headerMore.contains(event.target)) headerMore.open = false;
-      if (contribute.open && !contribute.contains(event.target)) {
-        contribute.open = false;
+      if (headerMore.open && !headerMore.contains(event.target)) {
+        headerMore.open = false;
         if (buildersView || builderProgram.open) showTrackView(false);
       }
     }

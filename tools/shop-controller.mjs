@@ -5,7 +5,7 @@
  * All methods that perform I/O are explicit user actions. A confirmed purchase
  * performs its explicitly requested completion GET; failures never auto-retry.
  */
-import {createShopSession} from './shop-session.mjs';
+const {createShopSession}=await import(new URL('./shop-session.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 import {createShopBrowserLock} from './shop-browser-lock.mjs';
 export class ShopControllerError extends Error {
   constructor(code) { super(code); this.name = 'ShopControllerError'; this.code = code; }

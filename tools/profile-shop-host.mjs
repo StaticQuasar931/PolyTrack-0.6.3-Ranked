@@ -1,8 +1,9 @@
+const {WORKSHOP_SHOP_CATALOG}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
-import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
+const {createProfileShopOwnedCache}=await import(new URL('./profile-shop-owned-cache.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 import {createProfileShopBalanceCache} from './profile-shop-balance-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
-import {createShopControllerStore,createShopController} from './shop-controller.mjs';
+const {createShopControllerStore,createShopController}=await import(new URL('./shop-controller.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {mountProfileShopUi:mountShopPreview}=await import(new URL('./profile-shop-ui.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {bindProfileShopPreview}=await import(new URL('./profile-shop-preview.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
@@ -323,7 +324,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,getRacerName:racerName,renderCosmeticPreview,cloudSaveConnected:!!user(),getLastConfirmedBalance:()=>current()&&enabled&&before===previewScope()?balanceCache.read(accountId,user()?.uid):null,hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,getRacerName:racerName,renderCosmeticPreview,cloudSaveConnected:!!user(),getLastConfirmedBalance:()=>current()&&enabled&&before===previewScope()?balanceCache.read(accountId,user()?.uid):null,hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:enabled===true&&workshopStickers===true?[...PROFILE_SHOP_CATALOG,...WORKSHOP_SHOP_CATALOG]:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');

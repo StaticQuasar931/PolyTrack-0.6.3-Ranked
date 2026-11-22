@@ -22,6 +22,7 @@ const stickerShapes={
  ridge:[[0x223a6a,[[3,24],[12,8],[17,16],[21,10],[29,24]]],[0xfcf1d0,[[8,15],[12,8],[16,15],[12,13]]]],
  'solar-flare':[[0x512028,[[16,3],[25,7],[29,16],[25,25],[16,29],[7,25],[3,16],[7,7]]],[0xff9044,[[16,6],[22,10],[26,16],[22,22],[16,26],[10,22],[6,16],[10,10]]],[0xfff1c7,[[17,8],[19,14],[25,16],[18,18],[15,24],[14,18],[8,16],[14,14]]]],
  'tide-mark':[[0x163855,[[4,9],[14,4],[28,9],[28,21],[18,28],[4,23]]],[0x4ce0c2,[[5,15],[13,9],[18,9],[27,15],[19,14],[13,17],[5,21]]],[0xe4fbf7,[[10,23],[18,17],[22,16],[27,18],[22,20],[18,24]]]],
+ 'turn-marker':[[0x1b304b,[[4,7],[28,7],[28,25],[4,25]]],[0xffdc85,[[8,20],[8,11],[21,11],[21,8],[27,14],[21,20],[21,17],[14,17],[14,20]]]],
  'hazard-band':[[0x17223a,[[3,8],[29,8],[29,24],[3,24]]],[0xffcb62,[[5,22],[13,10],[18,10],[10,22]]],[0xffcb62,[[13,22],[21,10],[26,10],[18,22]]]],
  'vector-wing':[[0x17314d,[[4,8],[28,8],[28,17],[16,25],[4,17]]],[0x9beaff,[[6,11],[14,15],[16,20],[9,17]]],[0xf2faff,[[26,11],[18,15],[16,20],[23,17]]]],
  laurel:[[0xecd28a,[[15,25],[8,22],[4,14],[5,6],[9,16],[15,22]]],[0xecd28a,[[17,25],[24,22],[28,14],[27,6],[23,16],[17,22]]],[0xf7e7b6,[[16,5],[21,12],[16,19],[11,12]]]]
@@ -29,11 +30,11 @@ const stickerShapes={
 const digits=['abcedf','bc','abged','abgcd','fgbc','afgcd','afgecd','abc','abcdefg','abfgcd'];
 const segments={a:[0,0,7,1.6],b:[5.4,1.8,1.6,4],c:[5.4,7,1.6,4],d:[0,11.2,7,1.6],e:[0,7,1.6,4],f:[0,1.8,1.6,4],g:[0,5.8,7,1.4]};
 const safeNumber=n=>Number.isInteger(n)&&n>=0&&n<=99?n:7;
-function raceNumberShapes(value){const text=String(safeNumber(value));const backing=[0x162340,[[5,7],[27,7],[29,10],[29,22],[26,25],[5,25],[3,22],[3,10]]];return [backing,...[...text].flatMap((d,i)=>[...digits[Number(d)]].map(id=>{const [dx,dy,w,h]=segments[id],x=(text.length===1?12.5:7.5+i*10)+dx,y=9.6+dy;return [0xf6fbff,[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]];}))];}
-const shapesFor=(id,number)=>id==='race-number'?raceNumberShapes(number):stickerShapes[id];
+function raceNumberShapes(value,ranked=false){const validRank=Number.isSafeInteger(value)&&value>0&&value<=999999;const text=ranked?(validRank?String(value):'') : String(safeNumber(value));const backing=[ranked?0x156760:0x162340,[[5,7],[27,7],[29,10],[29,22],[26,25],[5,25],[3,22],[3,10]]];return [backing,...[...text].flatMap((d,i)=>[...digits[Number(d)]].map(id=>{const [dx,dy,w,h]=segments[id],size=Math.min(1,23/(text.length*9-2)),x=(32-(text.length*9-2)*size)/2+(i*9+dx)*size,y=16-(6.4-dy)*size;return [0xf6fbff,[[x,y],[x+w*size,y],[x+w*size,y+h*size],[x,y+h*size]]];}))];}
+const shapesFor=(id,number)=>id==='race-number'||id==='rank-number'?raceNumberShapes(number,id==='rank-number'):stickerShapes[id];
 export function carStickerIcon(id,number){return (shapesFor(id,number)||[]).map(([color,points])=>'<polygon fill="#'+color.toString(16).padStart(6,'0')+'" stroke="none" points="'+points.map(p=>p.join(',')).join(' ')+'"/>').join('');}
 export function carAttachmentParts(category,id,density='low',variant){
- const number=id==='race-number'?safeNumber(variant):null,tier=id==='crown'&&['silver','bronze'].includes(variant)?variant:'gold';
+ const number=id==='rank-number'?(Number.isSafeInteger(variant)&&variant>0&&variant<=999999?variant:0):id==='race-number'?safeNumber(variant):null,tier=id==='crown'&&['silver','bronze'].includes(variant)?variant:'gold';
  const key=category+':'+id+':'+density+':'+(number??tier);if(cache.has(key))return cache.get(key);if(!['low','medium','high'].includes(density))throw Error('Invalid visual density');
  const dark=0x243545,metal=0xb5ccd3,cyan=0x7ee7ff,gold=0xe5b862,parts=[];const add=(g,c,e=0,decal=false)=>parts.push(part(g,c,e,decal));
  if(id==='none')return [];
@@ -46,6 +47,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else if(id==='roof-vent'){add(box(.124,.025,.16),dark);for(const z of [-.044,0,.044])add(box(.11,.021,.018,0,.025,z),0x93adbd);}
   else if(id==='intake'){add(box(.24,.035,.23),dark);for(const x of [-.08,.08])add(box(.052,.08,.19,x,.064),metal);add(box(.21,.025,.19,0,.115),cyan);}
+  else if(id==='pace-light'){add(box(.25,.035,.15),dark);add(box(.22,.026,.11,0,.048),metal);for(const x of [-.062,.062])add(box(.075,.03,.078,x,.071),0x5aeeff,.45);}
   else throw Error('Unknown roof visual');
  }else if(category==='sticker'){
   const shapes=shapesFor(id,number),digitsOut=[];if(!shapes)throw Error('Unknown sticker');
@@ -67,6 +69,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
   else if(id==='shield'){add(box(.123,.105,.014,0,-.016,.008),dark);add(box(.09,.072,.01,0,-.011,.018),metal);add(box(.046,.042,.01,0,-.014,.026),cyan);}
+  else if(id==='apex-crest'){add(box(.14,.10,.016,0,-.016,.009),dark);for(const x of [-.031,.031])add(box(.04,.065,.012,x,-.008,.023),0xffd57d);}
   else throw Error('Unknown nose emblem');
  }else if(category==='front'){
   if(id==='rearbar'){add(box(.36,.045,.025,0,0,.0125),dark);add(box(.3,.016,.012,0,0,.031),cyan,.2);}
@@ -76,9 +79,11 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='fog-lamp'){add(box(.128,.035,.027,0,-.013,.014),dark);add(box(.09,.019,.012,0,-.005,.031),0xfc443b,.28);}
   else if(id==='canards'){for(const x of [-.17,.17]){add(box(.13,.023,.09,x,-.007,.043),dark);add(box(.029,.052,.071,x*1.21,.018,.046),metal);}}
   else if(id==='tail-lights'){for(const x of [-.09,.09]){add(box(.107,.035,.025,x,-.012,.013),dark);add(box(.076,.015,.01,x,-.009,.029),0xff523f,.28);}}
+  else if(id==='nose-guard'){add(box(.33,.032,.05,0,-.019,.021),dark);add(box(.28,.014,.026,0,-.005,.046),metal);}
+  else if(id==='afterburner'){add(box(.28,.04,.026,0,-.02,.015),dark);for(const x of [-.075,.075])add(box(.087,.019,.012,x,-.012,.031),0xfc6950,.4);}
   else throw Error('Unknown front accessory');
  }else throw Error('Unknown attachment category');
- const result=Object.freeze(parts);if(number!==null){const numeric=[...cache.keys()].filter(item=>item.startsWith('sticker:race-number:'));if(numeric.length>=24)cache.delete(numeric[0]);}
+ const result=Object.freeze(parts);if(number!==null){const numeric=[...cache.keys()].filter(item=>/^sticker:(race|rank)-number:/.test(item));if(numeric.length>=24)cache.delete(numeric[0]);}
  cache.set(key,result);return result;
 }
 export function carAttachmentFrames(positions,indices){
@@ -98,7 +103,10 @@ export function carAttachmentFrames(positions,indices){
  const rearFaces=faces.filter(f=>f.normal[2]<-.7&&f.center[1]>min[1]+(max[1]-min[1])*.4);let rear=null;if(rearFaces.length){const f=rearFaces.sort((a,b)=>a.center[2]-b.center[2])[0];rear={point:[centerX,f.center[1],f.center[2]],normal:[...f.normal],width:Math.max(...f.p.map(p=>p[0]))-Math.min(...f.p.map(p=>p[0]))};}
  const decalFrames={};for(const [id,axis,sign] of [['left',0,-1],['right',0,1],['front',2,1],['rear',2,-1],['under',1,-1]]){
   const matching=faces.filter(f=>f.normal[axis]*sign>.8).sort((a,b)=>b.area-a.area);if(!matching.length)continue;
-  const top=matching[0],n=top.normal,dot=(a,b)=>a.reduce((sum,x,i)=>sum+x*b[i],0);
+  const mid=(min[1]+max[1])/2;const tip=id==='front'?faces.filter(f=>f.normal[1]>.62&&f.center[2]>max[2]-(max[2]-min[2])*.19).sort((a,b)=>b.center[2]-a.center[2])[0]:null;
+  const tail=id==='rear'?matching.filter(f=>f.center[1]>mid-.15).sort((a,b)=>b.center[1]-a.center[1])[0]:null;
+  if(tip)matching.push(...faces.filter(f=>f.normal[1]>.62&&!matching.includes(f)));
+  const top=tip||tail||matching[0],n=top.normal,dot=(a,b)=>a.reduce((sum,x,i)=>sum+x*b[i],0);
   const coplanar=matching.filter(f=>dot(n,f.normal)>.999&&Math.abs(dot(n,f.p[0].map((x,i)=>x-top.p[0][i])))<.002);
   const a=coplanar.reduce((sum,f)=>sum+f.area,0),point=top.center.map((_,i)=>coplanar.reduce((sum,f)=>sum+f.center[i]*f.area,0)/a);
   const horizontal=Math.hypot(n[0],n[2]),right=horizontal>.15?[n[2]/horizontal,0,-n[0]/horizontal]:[1,0,0];
