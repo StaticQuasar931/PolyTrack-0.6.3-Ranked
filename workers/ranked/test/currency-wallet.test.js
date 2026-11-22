@@ -1606,3 +1606,20 @@ test('new Workshop stickers use existing purchase and seven-read wallet contract
  assert.equal(wallet.balance,0);assert.deepEqual(wallet.ownedItemIds,items.map(([id])=>id));
  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,7);
 });
+
+test('live HTTP catalog and wallet never return Workshop IDs unknown to older clients',async()=>{
+ const f=fixture(),env={CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION:CURRENCY_RULES_VERSION,CURRENCY_WORKSHOP_STICKERS_ENABLED:'true'};
+ f.funds(66);
+ const service=createCurrencyService({store:f.store,now:()=>AT,workshopStickersEnabled:true});
+ for(const [i,[itemId,expectedPrice]] of [['workshop-sticker-hazard-band',18],['workshop-sticker-vector-wing',48]].entries())await service.execute(UID,f.command('purchase',{itemId,catalogVersion:2,expectedPrice,expectedWalletRevision:i+1}));
+ const options={env,store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT};
+ const get=(path,rev)=>handleCurrencyRequest(new Request('https://test.invalid'+path,{headers:rev?{'X-PolyTrack-Revision':String(rev)}:{}}),options).then(r=>r.json());
+ for(const [revision,expected] of [[null,0],[375,0],[376,2],[381,2],[382,4],[999,4]]){
+  const start=f.calls.length;
+  const catalog=await get('/v1/shop/catalog?workshop=1',revision);
+  assert.equal(catalog.items.filter(i=>i.kind==='workshop-sticker').length,expected);
+  assert.equal(f.calls.length,start,'catalog does not touch Firestore');
+  const wallet=await get('/v1/currency/wallet?accountId='+ACCOUNT+'&workshop=1',revision);
+  assert.equal(wallet.ownedItemIds.length,expected===4?2:0);
+ }
+});

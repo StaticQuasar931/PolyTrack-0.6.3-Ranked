@@ -2,6 +2,7 @@
 // Requires deny-all client access to these server-owned collections before enable.
 // Store MUST implement real serializable transactions, not read/mutate/save.
 import {ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchievementCoinReceipt} from '../../../tools/achievement-coin-schedule.mjs';
+import {CLIENT_REVISION_HEADER} from './client-access-policy.js';
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
 import {WORKSHOP_STICKER_SHOP_CATALOG} from '../../../tools/workshop-sticker-shop-catalog.mjs';
@@ -30,6 +31,13 @@ const LEGACY_SHOP_CATALOG = Object.freeze([
 export const SHOP_CATALOG = PROFILE_SHOP_CATALOG;
 export const SHOP_CATALOG_VERSION = PROFILE_SHOP_CATALOG_VERSION;
 const ALL_SHOP_ITEMS = Object.freeze([...SHOP_CATALOG, ...WORKSHOP_STICKER_SHOP_CATALOG]);
+const ORIGINAL_WORKSHOP_ITEMS = Object.freeze(ALL_SHOP_ITEMS.filter(item=>item.kind!=='workshop-sticker'||['workshop-sticker-solar-flare','workshop-sticker-tide-mark'].includes(item.id)));
+// Browsers validate each catalog ID against their own immutable client bundle.
+function compatibleWorkshopItems(request,requested){
+ const raw=request.headers.get(CLIENT_REVISION_HEADER),revision=Number(raw);
+ if(!requested||!/^\d+$/.test(raw||'')||!Number.isSafeInteger(revision)||revision<376)return SHOP_CATALOG;
+ return revision>=382?ALL_SHOP_ITEMS:ORIGINAL_WORKSHOP_ITEMS;
+}
 const ENTITLEMENT_PATH = '0.6.2_s1_cosmetic_entitlements/';
 const META_PATH = '0.6.2_s1_release_meta/current';
 // Historical amounts/IDs are immutable. Only these three have separate legacy grant documents.
@@ -157,7 +165,7 @@ function checkedAchievementGrant(grant, accountId, uid) {
   demand(validAchievementCoinReceipt(grant), 'grant_invalid', 409);
 }
 
-export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false, workshopStickersEnabled = false, includeWorkshopStickers = false}) {
+export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false, workshopStickersEnabled = false, includeWorkshopStickers = false, visibleWorkshopItems}) {
   demand(typeof store?.transaction === 'function' && typeof now === 'function', 'transaction_store_required', 503);
   demand(SHOP_CATALOG_VERSION === 2 && SHOP_CATALOG.length >= ORIGINAL_PROFILE_INVENTORY_IDS.length &&
     SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(ALL_SHOP_ITEMS.map(item => item.id)).size === ALL_SHOP_ITEMS.length &&
@@ -221,7 +229,7 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
           }
           // Canonical purchases cover all new items; only the original three need fallback reads.
           // This read-only union neither repairs legacy provenance nor exposes retired native recipes.
-          const ownedItemIds = (includeWorkshopStickers ? ALL_SHOP_ITEMS : SHOP_CATALOG).filter(item => ownedIds.has(item.id)).map(item => item.id);
+          const ownedItemIds = (visibleWorkshopItems ?? (includeWorkshopStickers ? ALL_SHOP_ITEMS : SHOP_CATALOG)).filter(item => ownedIds.has(item.id)).map(item => item.id);
           return {accountId, catalogVersion: SHOP_CATALOG_VERSION, balance, revision, ownedItemIds, inventoryComplete: true,
             equipRevision: equipped.revision, equipped: null};
         }
@@ -362,9 +370,10 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
     const workshopStickersEnabled = env.CURRENCY_WORKSHOP_STICKERS_ENABLED === 'true';
     const workshop = url.searchParams.getAll('workshop');
     const includeWorkshopStickers = workshop.length === 1 && workshop[0] === '1';
+    const visibleWorkshopItems=compatibleWorkshopItems(request,workshopStickersEnabled&&includeWorkshopStickers);
     if (request.method === 'GET' && pathname === '/v1/shop/catalog') {
       return respond(200, {version: SHOP_CATALOG_VERSION, kind: 'profile-cosmetic',
-        items: workshopStickersEnabled && includeWorkshopStickers ? ALL_SHOP_ITEMS : SHOP_CATALOG});
+        items: visibleWorkshopItems});
     }
     let command;
     if (request.method === 'GET' && pathname === '/v1/currency/wallet') {
@@ -387,7 +396,7 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
       command = {op: ops[pathname], ...body};
     }
     const outcome = await createCurrencyService({store, now, achievementCoinsEnabled: env.CURRENCY_ACHIEVEMENTS_ENABLED === 'true',
-      workshopStickersEnabled, includeWorkshopStickers}).execute(uid, command);
+      workshopStickersEnabled, includeWorkshopStickers, visibleWorkshopItems}).execute(uid, command);
     return respond(200, {...outcome,
       ...(command.op === 'claim' && command.rewardId === 'login' && outcome.duplicate === false ?
         successfulLoginClocks.get(outcome) : {})});

@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 449,
+  "number": 450,
   "version": "0.6.3",
-  "revision": 382,
+  "revision": 383,
   "notes": [
-    "See real part previews in the Workshop and place larger stickers, including a custom race number, on more sides of the car.",
-    "Try new paint finishes and fitted parts. Podium crowns match your best confirmed medal.",
-    "Event personal bests can recover from a full browser cache without removing pending runs or saved replays."
+    "Hazard Band and Vector Wing join the Style Shop. Older game tabs can still use the Shop before updating."
   ],
-  "preparedAt": "2026-11-22T03:33:27.086Z",
-  "committedAt": "2026-11-22T03:34:10.000Z"
+  "preparedAt": "2026-11-22T03:45:19.566Z",
+  "committedAt": "2026-11-22T03:45:22.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
