@@ -43,9 +43,11 @@
 .car-sticker-layout label{color:#d8e6fa;font:600 14px/1.2 sans-serif}
 .car-sticker-layout label:not(:first-child){margin-top:6px}
 .car-sticker-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
-.car-sticker-buttons.position{grid-template-columns:minmax(51px,.9fr) repeat(3,minmax(0,1fr))}
-.car-sticker-buttons.position button:first-child{grid-column:1/-1}
-.car-sticker-location{align-self:center;color:#d1dff4;font:600 12px/1.15 sans-serif}
+.car-sticker-buttons.position{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.car-sticker-buttons.position button{min-height:58px;display:grid;grid-template-rows:30px auto;place-items:center;gap:1px;padding:4px 1px;font-size:12px}
+.car-sticker-buttons.position svg{width:30px;height:30px}
+.car-workshop-swatches .car-workshop-mesh{display:block;width:100%;max-width:152px;aspect-ratio:120/78;object-fit:contain;border:1px solid #506693;box-sizing:border-box}
+.car-workshop-swatches>button:has(.car-workshop-mesh){min-height:116px;padding:6px}
 .car-cosmetic-workshop footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 8px;border-top:1px solid #52678f}
 .car-cosmetic-workshop footer p{grid-column:1/-1;color:#ffe0a1}
 .car-cosmetic-workshop [data-save-state]{color:#a8e7d1;font:600 13px/1.3 sans-serif}
@@ -65,3 +67,8 @@
  .car-cosmetic-workshop [role=tab]{min-height:34px}
  .car-cosmetic-workshop [data-choices]{padding-block:8px}
 }
+
+.car-cosmetic-workshop [data-number-editor]{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:12px;color:#d8e6fa;font:600 14px/1.2 sans-serif}
+.car-cosmetic-workshop [data-number-editor] input{min-height:42px;width:4ch;box-sizing:content-box;padding:0 8px;background:#15234f;border:1px solid #a5e2f1;color:#f4f9ff;text-align:center;font:inherit;font-variant-numeric:tabular-nums}
+.car-workshop-swatches [data-tier=silver] svg path{fill:#7f9bb7;stroke:#e0efff}
+.car-workshop-swatches [data-tier=bronze] svg path{fill:#a86b40;stroke:#ffd0a3}

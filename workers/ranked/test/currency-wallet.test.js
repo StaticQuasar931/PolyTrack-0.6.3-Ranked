@@ -1593,3 +1593,16 @@ test('lost new HTTP claim recovers original persisted identity after client recr
  assert.equal(client.requests.filter(row=>row.method==='POST').length,1);assert.equal(local.size,0);assert.equal(f.commits.length,1);
  assert.equal(client.requests.find(row=>row.method==='POST').body.requestId,JSON.parse(saved).requestId);client.store.dispose();
 });
+
+test('new Workshop stickers use existing purchase and seven-read wallet contracts',async()=>{
+ const f=fixture(),service=createCurrencyService({store:f.store,now:()=>AT,workshopStickersEnabled:true,includeWorkshopStickers:true});
+ f.funds(66);
+ const items=[['workshop-sticker-hazard-band',18],['workshop-sticker-vector-wing',48]];
+ for(const [index,[itemId,expectedPrice]] of items.entries()){
+  const outcome=await service.execute(UID,f.command('purchase',{itemId,catalogVersion:2,expectedPrice,expectedWalletRevision:index+1}));
+  assert.equal(outcome.delta,-expectedPrice);
+ }
+ const start=f.calls.length;const wallet=await service.execute(UID,f.command('wallet'));
+ assert.equal(wallet.balance,0);assert.deepEqual(wallet.ownedItemIds,items.map(([id])=>id));
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,7);
+});

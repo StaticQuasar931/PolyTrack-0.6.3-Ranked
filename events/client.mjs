@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=381';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=381';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=382';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=382';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=381';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=381';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=381';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=382';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=382';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=382';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -245,8 +245,42 @@ export function eventCatalogFreshUntil(periods,at=Date.now(),maxAge=300000){
 }
 const eventDataStorage=()=>globalThis.__ptRankedDataStorage||localStorage;
 const read=(key,fallback)=>{try{return JSON.parse(eventDataStorage().getItem(key))??fallback;}catch{return fallback;}};
-const write=(key,value)=>eventDataStorage().setItem(key,JSON.stringify(value));
-const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
+const isEventBoardCacheKey=key=>typeof key==='string'&&/^polytrack-062-events-v1-(?:totals|permanent(?:-rolling-hills)?|[dw]_\d{8}|kodub_\d+|archive-\d{4}-\d{2})$/.test(key);
+const eventBoardCacheLimit=8,eventBoardMaxChars=256*1024;
+function eventBoardKeys(storage){
+  const keys=[];
+  try{if(typeof storage.cacheKeys==='function')return storage.cacheKeys().filter(isEventBoardCacheKey);
+    for(let i=0;i<storage.length;i++){const key=storage.key(i);if(isEventBoardCacheKey(key))keys.push(key);}
+  }catch{/* Storage may be disabled. */}
+  return keys;
+}
+function dropEventBoard(storage,key){try{storage.removeItem(key);}catch{/* Rebuildable cache only. */}}
+export function writeEventRecord(storage,local,key,value){
+  const raw=JSON.stringify(value);
+  try{storage.setItem(key,raw);}
+  catch(error){
+    if((key!==QUEUE&&key!==BEST)||!['QuotaExceededError','NS_ERROR_DOM_QUOTA_REACHED'].includes(error?.name)||!local)throw error;
+    const boards=eventBoardKeys(local);
+    if(!boards.length)throw error;
+    for(const board of boards)dropEventBoard(local,board);
+    storage.setItem(key,raw);
+  }
+}
+export function saveEventBoardCache(storage,key,value){
+  if(!isEventBoardCacheKey(key))return false;
+  const raw=JSON.stringify(value);
+  if(raw.length>eventBoardMaxChars){dropEventBoard(storage,key);return false;}
+  const previous=eventBoardKeys(storage).filter(item=>item!==key);
+  const periodOrder=item=>{const id=item.slice(STORE.length+1);if(id==='totals'||id.startsWith('permanent'))return Infinity;
+    const date=id.match(/^(?:[dw]_)(\d{4})(\d{2})(\d{2})$/),archive=id.match(/^archive-(\d{4})-(\d{2})$/);
+    return date?Date.UTC(+date[1],+date[2]-1,+date[3]):archive?Date.UTC(+archive[1],+archive[2]-1):Number(id.slice(6))||0;
+  };
+  previous.sort((a,b)=>(periodOrder(b)-periodOrder(a))||a.localeCompare(b));
+  for(const stale of previous.slice(eventBoardCacheLimit-1))dropEventBoard(storage,stale);
+  storage.setItem(key,raw);return true;
+}
+const write=(key,value)=>{let local;try{local=globalThis.localStorage;}catch{/* Managed cache can still be available. */}return writeEventRecord(eventDataStorage(),local,key,value);};
+const cacheWrite=(key,value)=>{try{if(isEventBoardCacheKey(key))saveEventBoardCache(eventDataStorage(),key,value);else write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
 export function sameEventSubmission(a,b){
   return !!a&&!!b&&['accountId','periodId','attemptId','timeMs','frames','replay'].every(key=>a[key]===b[key]);
 }
