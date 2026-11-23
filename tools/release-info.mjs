@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 480,
+  "number": 481,
   "version": "0.6.3",
-  "revision": 406,
+  "revision": 407,
   "notes": [
-    "Save your Workshop setup to show it on your car in Ranked Racers and racer profiles after the next snapshot."
+    "Your saved Workshop changes show up on your car previews right away, even before the next rankings update."
   ],
-  "preparedAt": "2026-11-23T01:40:54.789Z",
-  "committedAt": "2026-11-23T01:40:56.000Z"
+  "preparedAt": "2026-11-23T01:57:54.537Z",
+  "committedAt": "2026-11-23T01:57:56.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
