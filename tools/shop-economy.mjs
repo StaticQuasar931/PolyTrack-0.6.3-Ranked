@@ -97,7 +97,7 @@ export function simulate(scenario, {model = 'current', horizonDays = 365} = {}) 
 
 export function review({horizonDays = 90} = {}) {
   return {reviewOnly: true, observedPlayerStats: false, currencyDisplayName: CURRENCY_DISPLAY_NAME,
-    lifetimeTrackCap: 280, milestones: MILESTONES,
+    lifetimeTrackCap: milestoneCredits(89), milestones: MILESTONES,
     claimCosts: {batch: {reads: 8, writes: 3}, newIndividual: {reads: 5, writes: 3},
       legacyIndividual: {reads: 6, writes: 3}, receiptReplay: {reads: 3, writes: 0}, wallet: {reads: 7, writes: 0}},
     currentRewards: CURRENT_REWARDS, prices: PRICES,

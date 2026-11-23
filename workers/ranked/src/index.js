@@ -121,7 +121,7 @@ const COLLECTIONS = Object.freeze({
   unrankedExtra: '0.6.2_extra_unranked_leaderboards'
 });
 const PROFILE_COSMETIC_OPTIONS = Object.freeze({
-  theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta', 'petrol']),
+  theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta', 'petrol', 'harbor-night']),
   accent: new Set(['cyan', 'white', 'lime', 'gold', 'orange', 'coral', 'pink', 'violet', 'ice']),
   finish: new Set(['gradient', 'solid', 'split', 'gloss', 'carbon', 'horizon']),
   plate: new Set(['block', 'solid', 'outline', 'notch', 'bar', 'pitlane-ticket']),
@@ -137,9 +137,9 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   nameFont: new Set(['classic', 'clean', 'racing', 'serif', 'condensed', 'wide', 'mono', 'rounded', 'book']),
   nameSize: new Set(['normal', 'large', 'compact']),
   nameWeight: new Set(['regular', 'bold']),
-  nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose', 'copper']),
+  nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose', 'copper', 'porcelain']),
   baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice', 'navy']),
-  title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
+  title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'extraExplorer', 'routeScout', 'atlasDriver', 'paceChaser', 'trackSentinel', 'podiumRegular', 'betaRacer']),
   badge: new Set(['auto', 'member', 'none', 'betaTester', 'community'])
 });
 
@@ -219,6 +219,11 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
   if (playtimeMs >= 5 * 60 * 60 * 1000) { allowed.nameFont.add('rounded'); allowed.nameColor.add('ice'); }
   if (extraTracks >= 1) { allowed.accent.add('orange'); allowed.stage.add('storm'); allowed.stageTint.add('mono'); allowed.stripe.add('grid'); allowed.stripe.add('circuit'); }
   if (extraTracks >= 3) { allowed.stage.add('aurora'); allowed.stripe.add('blocks'); allowed.nameColor.add('rose'); }
+  if (extraTracks >= 5) allowed.title.add('extraExplorer');
+  if (extraTracks >= 10) allowed.title.add('routeScout');
+  if (extraTracks >= 20) allowed.title.add('atlasDriver');
+  if (Number(entry.pbCount||0) >= 75) allowed.title.add('paceChaser');
+  if (Number(entry.trackWins||0) >= 10) allowed.title.add('trackSentinel');
   if (Number(entry.pbCount||0) >= 10) { allowed.title.add('pbHunter'); allowed.nameColor.add('cyan'); allowed.nameColor.add('gold'); allowed.baseSecondary.add('cyan'); allowed.baseSecondary.add('gold'); }
   if (Number(entry.pbCount||0) >= 25) { allowed.nameColor.add('coral'); allowed.nameColor.add('mint'); allowed.baseSecondary.add('coral'); allowed.baseSecondary.add('mint'); allowed.emblem2.add('diamond'); }
   if (Number(entry.pbCount||0) >= 50) { allowed.nameColor.add('violet'); allowed.nameColor.add('aurora'); allowed.baseSecondary.add('violet'); allowed.baseSecondary.add('orange'); allowed.baseSecondary.add('ice'); allowed.emblem2.add('flame'); }

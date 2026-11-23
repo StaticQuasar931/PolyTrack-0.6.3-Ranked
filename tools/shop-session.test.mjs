@@ -173,10 +173,11 @@ const milestoneReceipt=(req,ids,delta,extra={})=>({op:'claim',accountId:req.body
  rewardId:'milestones',outcomeOnly:true,balanceAfter:100+delta,walletRevision:4,duplicate:false,alreadyClaimed:false,
  delta,claimedRewardIds:ids,...extra});
 
-test('exact backend seven-tier allowlist accepts all127 valid subsets and never turns receipts into wallets',async()=>{
+test('exact backend tier allowlist validates old subsets, new tiers and the complete award and never turns receipts into wallets',async()=>{
  const {CURRENCY_MILESTONES}=await import('../workers/ranked/src/currency-wallet.js');
- assert.deepEqual(CURRENCY_MILESTONES.map(t=>t.rewardId),['tracks-1','tracks-5','tracks-20','tracks-35','tracks-50','tracks-70','tracks-89']);
- for(let mask=1;mask<128;mask++){
+ assert.deepEqual(CURRENCY_MILESTONES.map(t=>t.threshold),[1,5,20,24,30,35,42,46,50,60,65,70,75,85,89]);
+ const masks=[...Array.from({length:127},(_,i)=>i+1),...CURRENCY_MILESTONES.map((_,i)=>1<<i),(1<<CURRENCY_MILESTONES.length)-1];
+ for(const mask of masks){
   const tiers=CURRENCY_MILESTONES.filter((_,i)=>mask&(1<<i)),ids=tiers.map(t=>t.rewardId),delta=tiers.reduce((sum,t)=>sum+t.amount,0);
   const f=fixture();await f.session.load();f.setHandler(async req=>milestoneReceipt(req,ids,delta));
   const result=await f.session.claim('milestones',{confirmed:true});assert.equal(result.result.delta,delta);

@@ -100,7 +100,7 @@ test('unknown and hostile data stay unknown; storage failures and cleanup stay s
  const page=await fixture(t,{cosmetics:{theme:[['hostile','<img src=x onerror=alert(1)>',3]]},progress:{local:{practiceFinishes:4,teleportCount:99,historyVisits:999}}});
  assert.equal(await page.locator('.aj img').count(),0);
  await mouse(page,'[data-aj-filter="all"]');await mouse(page,'[data-aj-family="all"]');
- assert.equal(await page.locator('[data-aj-node]').count(),8);assert.equal(await page.locator('[data-aj-node="style:3"]').getAttribute('data-aj-known'),'false');
+ assert.equal(await page.locator('[data-aj-node]').count(),16);assert.equal(await page.locator('[data-aj-node="style:3"]').getAttribute('data-aj-known'),'false');
  assert.equal(await page.locator('[data-aj-node="style:3"] progress').getAttribute('value'),null);
  assert.doesNotMatch(await page.locator('.aj').innerText(),/teleportCount|historyVisits/);
  await page.evaluate(()=>{dispose();dispose=api.bindAchievementJournal(document.querySelector('#host'),{onClose:()=>calls.closed++,storage:{getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}}});});
@@ -114,10 +114,10 @@ test('unknown and hostile data stay unknown; storage failures and cleanup stay s
 test('currency shows real amounts and eligible-to-check status; action only navigates to Shop',{timeout:15000},async t=>{
  const page=await fixture(t,{cosmetics:{},progress:{confirmed:{casualCompletionCount:20},local:{casualCompletionCount:89}}});
  await mouse(page,'[data-aj-filter="all"]');await mouse(page,'[data-aj-family="currency"]');
- assert.equal(await page.locator('[data-aj-node]:visible').count(),7);
+ assert.equal(await page.locator('[data-aj-node]:visible').count(),15);
  assert.equal(await page.locator('[data-aj-earned="true"]').count(),0);
  await page.locator('[data-aj-sort]').selectOption('coins');
- assert.deepEqual(await page.locator('[data-aj-node]:visible').evaluateAll(nodes=>nodes.map(el=>JSON.parse(el.dataset.ajSortItem).reward.amount)),[60,50,50,40,30,30,20]);
+ assert.deepEqual(await page.locator('[data-aj-node]:visible').evaluateAll(nodes=>nodes.map(el=>JSON.parse(el.dataset.ajSortItem).reward.amount)),[60,50,50,40,30,30,30,24,20,20,16,14,12,10,6]);
  await mouse(page,'[data-aj-select="currency:tracks-20"]');
  assert.match(await page.locator('[data-aj-detail]').innerText(),/Goal reached/);assert.match(await page.locator('[data-aj-detail]').innerText(),/50 Style Coins/);
  assert.match(await page.locator('[data-aj-detail]').innerText(),/Reaching a goal does not mean the coins have already been credited/);
@@ -199,8 +199,8 @@ test('missing casual completion count still exposes Style Coins and the first Sh
 
 test('default journal exposes every goal tier with separate unlock counts', {timeout:20000},async t=>{
  const page=await fixture(t);
- assert.equal(await page.locator('[data-aj-node]:visible').count(),31);
- assert.match(await page.locator('.aj-summary').innerText(),/cosmetic unlocks across these goals; 7 coin milestones/);
+ assert.equal(await page.locator('[data-aj-node]:visible').count(),44);
+ assert.match(await page.locator('.aj-summary').innerText(),/29 cosmetic tiers and 15 coin tiers/);
  assert.equal(await page.locator('[data-aj-family="all"]').getAttribute('aria-pressed'),'true');
  await mouse(page,'[data-aj-select="style:5"]');
  assert.match(await page.locator('[data-aj-detail]').innerText(),/Shared title[/]style bonus, paid once/);

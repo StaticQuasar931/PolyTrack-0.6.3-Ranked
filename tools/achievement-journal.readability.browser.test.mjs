@@ -12,7 +12,7 @@ const evidence = process.env.ACHIEVEMENT_EVIDENCE_DIR || 'C:/Users/Static/Docume
 
 test('offline readable unlock goals, real input and no profile-pattern bleed',{timeout:90000},async () => {
   await fs.mkdir(evidence,{recursive:true});
-  const allowed = new Set(['achievement-journal.css','achievement-journal.mjs','achievement-journal-currency.mjs','achievement-coin-schedule.mjs','achievement-model.mjs','profile-shop-art.css','profile-shop-art.mjs','profile-shop-expanded-designs.mjs','profile-shop-catalog.mjs','racer-studio-polish.css']);
+  const allowed = new Set(['achievement-journal.css','achievement-journal.mjs','achievement-recommendations.mjs','achievement-journal-currency.mjs','achievement-coin-schedule.mjs','achievement-model.mjs','profile-shop-art.css','profile-shop-art.mjs','profile-shop-expanded-designs.mjs','profile-shop-catalog.mjs','racer-studio-polish.css']);
   const server = http.createServer(async(req,res) => {
     const url = new URL(req.url,'http://localhost');
     if(url.pathname === '/') {

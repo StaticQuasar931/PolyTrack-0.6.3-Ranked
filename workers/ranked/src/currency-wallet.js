@@ -1,7 +1,7 @@
 // REVIEW-ONLY BACKEND: routes default OFF. No automatic awards or seeded funds.
 // Requires deny-all client access to these server-owned collections before enable.
 // Store MUST implement real serializable transactions, not read/mutate/save.
-import {ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchievementCoinReceipt} from '../../../tools/achievement-coin-schedule.mjs';
+import {STYLE_COIN_MILESTONES, ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchievementCoinReceipt} from '../../../tools/achievement-coin-schedule.mjs';
 import {CLIENT_REVISION_HEADER} from './client-access-policy.js';
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
@@ -33,20 +33,26 @@ export const SHOP_CATALOG_VERSION = PROFILE_SHOP_CATALOG_VERSION;
 const ALL_SHOP_ITEMS = Object.freeze([...SHOP_CATALOG, ...WORKSHOP_SHOP_CATALOG]);
 const PREVIOUS_WORKSHOP_ITEMS=Object.freeze(ALL_SHOP_ITEMS.filter(item=>!isWorkshopShopItem(item)||['workshop-sticker-solar-flare','workshop-sticker-tide-mark','workshop-sticker-hazard-band','workshop-sticker-vector-wing'].includes(item.id)));
 const ORIGINAL_WORKSHOP_ITEMS = Object.freeze(ALL_SHOP_ITEMS.filter(item=>!isWorkshopShopItem(item)||['workshop-sticker-solar-flare','workshop-sticker-tide-mark'].includes(item.id)));
-// Browsers validate each catalog ID against their own immutable client bundle.
+// Browsers validate each catalog ID and reward receipt against their own bundle.
+const EXPANDED_SHOP_MIN_REVISION=404;
+const EXPANDED_SHOP_IDS=new Set(['profile-porcelain-ink','profile-harbor-night','workshop-sticker-switchback',
+ 'workshop-finish-ceramic-sheen','workshop-emblem-northstar-pin','workshop-accessory-timing-pod','workshop-front-marshal-lamps','workshop-rear-signal-bar']);
+const BASE_COMPLETION_IDS=new Set(['tracks-1','tracks-5','tracks-20','tracks-35','tracks-50','tracks-70','tracks-89']);
+function supportedShopRevision(request){
+ const raw=request.headers.get(CLIENT_REVISION_HEADER), revision=Number(raw);
+ return /^\d+$/.test(raw||'')&&Number.isSafeInteger(revision)?revision:0;
+}
 function compatibleWorkshopItems(request,requested){
- const raw=request.headers.get(CLIENT_REVISION_HEADER),revision=Number(raw);
- if(!requested||!/^\d+$/.test(raw||'')||!Number.isSafeInteger(revision)||revision<376)return SHOP_CATALOG;
- return revision>=384?ALL_SHOP_ITEMS:revision>=382?PREVIOUS_WORKSHOP_ITEMS:ORIGINAL_WORKSHOP_ITEMS;
+ const revision=supportedShopRevision(request);
+ const items=!requested||revision<376?SHOP_CATALOG:revision>=384?ALL_SHOP_ITEMS:revision>=382?PREVIOUS_WORKSHOP_ITEMS:ORIGINAL_WORKSHOP_ITEMS;
+ return revision>=EXPANDED_SHOP_MIN_REVISION?items:items.filter(item=>!EXPANDED_SHOP_IDS.has(item.id));
 }
 const ENTITLEMENT_PATH = '0.6.2_s1_cosmetic_entitlements/';
 const META_PATH = '0.6.2_s1_release_meta/current';
 // Historical amounts/IDs are immutable. Only these three have separate legacy grant documents.
 const LEGACY_MILESTONE_IDS = Object.freeze(['tracks-1', 'tracks-5', 'tracks-20']);
-export const CURRENCY_REWARDS = Object.freeze({login: 8, 'tracks-1': 20, 'tracks-5': 30, 'tracks-20': 50,
-  'tracks-35': 30, 'tracks-50': 40, 'tracks-70': 50, 'tracks-89': 60});
-export const CURRENCY_MILESTONES = Object.freeze([1, 5, 20, 35, 50, 70, 89].map(threshold =>
-  Object.freeze({rewardId: 'tracks-' + threshold, threshold, amount: CURRENCY_REWARDS['tracks-' + threshold]})));
+export const CURRENCY_REWARDS = Object.freeze({login: 8, ...Object.fromEntries(STYLE_COIN_MILESTONES.map(tier => [tier.rewardId, tier.amount]))});
+export const CURRENCY_MILESTONES = STYLE_COIN_MILESTONES;
 const MILESTONE_IDS = Object.freeze(CURRENCY_MILESTONES.map(tier => tier.rewardId));
 const account = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const requestKey = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(value);
@@ -166,7 +172,7 @@ function checkedAchievementGrant(grant, accountId, uid) {
   demand(validAchievementCoinReceipt(grant), 'grant_invalid', 409);
 }
 
-export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false, workshopStickersEnabled = false, includeWorkshopStickers = false, visibleWorkshopItems}) {
+export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false, workshopStickersEnabled = false, includeWorkshopStickers = false, visibleWorkshopItems, visibleMilestoneIds = null}) {
   demand(typeof store?.transaction === 'function' && typeof now === 'function', 'transaction_store_required', 503);
   demand(SHOP_CATALOG_VERSION === 2 && SHOP_CATALOG.length >= ORIGINAL_PROFILE_INVENTORY_IDS.length &&
     SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(ALL_SHOP_ITEMS.map(item => item.id)).size === ALL_SHOP_ITEMS.length &&
@@ -194,6 +200,8 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
       if (['purchase', 'equip'].includes(op)) demand(item || legacyItem, 'unknown_item');
       if (op === 'claim') demand(typeof rewardId === 'string' &&
         (Object.hasOwn(CURRENCY_REWARDS, rewardId) || rewardId === 'milestones' || rewardId === 'achievements'), 'unknown_reward');
+      if (op === 'claim' && MILESTONE_IDS.includes(rewardId) && visibleMilestoneIds)
+        demand(visibleMilestoneIds.has(rewardId), 'unknown_reward');
       if (op === 'claim' && rewardId === 'achievements') demand(achievementCoinsEnabled === true, 'achievement_coins_disabled', 409);
       const receiptId = op === 'wallet' ? null : await hash([uid, accountId, requestId]);
       const fingerprint = JSON.stringify([op, accountId, rewardId ?? null, itemId ?? null,
@@ -291,7 +299,7 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
               const entitlement = await tx.get(ENTITLEMENT_PATH + accountId);
               milestoneEvidence(entitlement, rewardId === 'milestones' ? 1 : Number(rewardId.slice(7)));
               const count = entitlement.serverIssued.achievements.casual.count;
-              claimedRewardIds = MILESTONE_IDS.filter(id => (rewardId === 'milestones' || id === rewardId) &&
+              claimedRewardIds = MILESTONE_IDS.filter(id => (!visibleMilestoneIds || visibleMilestoneIds.has(id)) && (rewardId === 'milestones' || id === rewardId) &&
                 count >= Number(id.slice(7)) && !claimed.has(id));
               demand(claimedRewardIds.length > 0, 'reward_already_claimed', 409);
               delta = claimedRewardIds.reduce((sum, id) => sum + CURRENCY_REWARDS[id], 0);
@@ -397,7 +405,8 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
       command = {op: ops[pathname], ...body};
     }
     const outcome = await createCurrencyService({store, now, achievementCoinsEnabled: env.CURRENCY_ACHIEVEMENTS_ENABLED === 'true',
-      workshopStickersEnabled, includeWorkshopStickers, visibleWorkshopItems}).execute(uid, command);
+      workshopStickersEnabled, includeWorkshopStickers, visibleWorkshopItems,
+      visibleMilestoneIds:supportedShopRevision(request)>=EXPANDED_SHOP_MIN_REVISION?null:BASE_COMPLETION_IDS}).execute(uid, command);
     return respond(200, {...outcome,
       ...(command.op === 'claim' && command.rewardId === 'login' && outcome.duplicate === false ?
         successfulLoginClocks.get(outcome) : {})});

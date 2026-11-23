@@ -92,9 +92,9 @@ test('Apex Observatory retains its summit building and circuit at both static de
 import {createHash} from 'node:crypto';
 import {PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS} from './profile-shop-expanded-designs.mjs';
 
-test('six visual designs keep exact typed metadata and defer all registration to the canonical catalog',()=>{
+test('expanded visual designs keep exact typed metadata and defer all registration to the canonical catalog',()=>{
   assert.deepEqual(PROFILE_SHOP_EXPANDED_DESIGNS.map(x=>[x.slot,x.value,x.price]),[
-    ['theme','petrol',16],['baseSecondary','navy',20],['edge','rail',32],['stripe','rally-lines',36],['nameFont','book',45],['nameColor','copper',24]
+    ['theme','petrol',16],['baseSecondary','navy',20],['edge','rail',32],['stripe','rally-lines',36],['nameFont','book',45],['nameColor','copper',24],['nameColor','porcelain',18],['theme','harbor-night',64]
   ]);
   assert(Object.isFrozen(PROFILE_SHOP_EXPANDED_DESIGNS));
   for(const item of PROFILE_SHOP_EXPANDED_DESIGNS){
@@ -122,7 +122,7 @@ test('staged manual card SVGs are distinct, bounded, static and simpler at low d
     assert.equal(normal,renderProfileShopArt(item.itemId));
     for(const original of PROFILE_SHOP_ART.filter(x=>originalIds.has(x.itemId)))assert.notEqual(normal,renderProfileShopArt(original.itemId));
   }
-  assert.equal(images.size,6);
+  assert.equal(images.size,8);
   assert.match(PROFILE_SHOP_EXPANDED_DESIGNS.find(x=>x.slot==='nameFont').fontNote,/OS font fallback: Palatino Linotype, Palatino, Georgia, serif/);
   assert.doesNotMatch(PROFILE_SHOP_EXPANDED_CSS,/@font-face|@keyframes|animation\s*:|transform\s*:|box-shadow\s*:|filter\s*:|position\s*:|https?:/);
 });
@@ -143,7 +143,7 @@ test('future catalog mapping admits exact supported grants only and skips unknow
   source=source.replace("import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';",`const PROFILE_SHOP_CATALOG=${JSON.stringify(future)};`)
     .replace("'./profile-shop-expanded-designs.mjs'",JSON.stringify(new URL('./profile-shop-expanded-designs.mjs',import.meta.url).href));
   const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
-  assert.equal(api.PROFILE_SHOP_DESIGNS.length,9);assert.equal(api.getProfileShopDesign('future-unsupported'),null);
+  assert.equal(api.PROFILE_SHOP_DESIGNS.length,11);assert.equal(api.getProfileShopDesign('future-unsupported'),null);
   for(const item of PROFILE_SHOP_EXPANDED_DESIGNS){assert.equal(api.profileShopArt(item.slot,item.value).className,item.className);assert.equal(api.renderProfileShopArt(item.itemId),renderProfileShopArt(item.itemId));}
   const wrong=source.replace('"value":"petrol"','"value":"ocean"');
   const rejected=await import('data:text/javascript;base64,'+Buffer.from(wrong).toString('base64'));

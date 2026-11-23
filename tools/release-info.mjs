@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 477,
+  "number": 478,
   "version": "0.6.3",
-  "revision": 403,
+  "revision": 404,
   "notes": [
-    "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
+    "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
   ],
-  "preparedAt": "2026-11-23T00:45:28.308Z",
-  "committedAt": "2026-11-23T00:45:30.000Z"
+  "preparedAt": "2026-11-23T00:53:14.164Z",
+  "committedAt": "2026-11-23T00:53:15.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

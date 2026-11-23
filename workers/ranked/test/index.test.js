@@ -2420,3 +2420,21 @@ test('scheduled profile propagation leaves aggregation to its isolated publishin
   assert.ok(writes.some(w=>w.update?.name.endsWith('/0.6.2_s1_worker_jobs/profile-test')&&w.update.fields.active.booleanValue===false));
   assert.equal(calls.some(path=>path.includes('/0.6.2_s1_leaderboards_overall/')),false);
 });
+
+test('Ranked Extra titles use the exact confirmed finish thresholds',()=>{
+ for (const [title,n] of [['extraExplorer',5],['routeScout',10]]) {
+  const design={...sanitizeProfileCosmetics({}),title};
+  assert.equal(sanitizeProfileCosmetics(design).title,title);
+  assert.equal(profileCosmeticsUnlocked(design,{extraCount:n-1}),false);
+  assert.equal(profileCosmeticsUnlocked(design,{extraCount:n}),true);
+ }
+});
+
+test('advanced racer titles recognize distinct confirmed milestones',()=>{
+ for(const [title,metric,n] of [['atlasDriver','extraCount',20],['paceChaser','pbCount',75],['trackSentinel','trackWins',10]]){
+  const design={...sanitizeProfileCosmetics({}),title};
+  assert.equal(sanitizeProfileCosmetics(design).title,title);
+  assert.equal(profileCosmeticsUnlocked(design,{[metric]:n-1}),false);
+  assert.equal(profileCosmeticsUnlocked(design,{[metric]:n}),true);
+ }
+});

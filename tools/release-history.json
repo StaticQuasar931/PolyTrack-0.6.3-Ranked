@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 477,
+    "number": 478,
     "version": "0.6.3",
-    "revision": 403,
+    "revision": 404,
     "notes": [
-      "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
+      "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
     ]
   },
   "entries": [
+    {
+      "number": 477,
+      "title": "Fix archived names and track freshness",
+      "commit": "49ed11cecc8218da7e6700b641abd7e51a3314a6",
+      "committedAt": "2026-11-23T00:45:30.000Z",
+      "notes": [
+        "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
+      ]
+    },
     {
       "number": 475,
       "title": "Restore the latest past weekly event",
@@ -173,16 +182,6 @@
       "committedAt": "2026-11-22T19:51:59.000Z",
       "notes": [
         "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
-      ]
-    },
-    {
-      "number": 453,
-      "title": "Compact event estimates and add Workshop sticker placements",
-      "commit": "457607d815d59b9b6356b1260ae3d4e7397d5b46",
-      "committedAt": "2026-11-22T19:44:09.000Z",
-      "notes": [
-        "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
-        "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
       ]
     }
   ],

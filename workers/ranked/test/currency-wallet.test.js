@@ -543,12 +543,12 @@ function setMilestones(f, count) {
     catalog: SERVER_ACHIEVEMENT_CATALOG, casual: {count, ledger: [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')}}}});
 }
 
-test('profile shop: append-only nine-item v2 catalog retains original three grants and prices', () => {
+test('profile shop: append-only eleven-item v2 catalog retains original three grants and prices', () => {
   assert.deepEqual(SHOP_CATALOG.slice(0, 3).map(item => [item.id, item.kind, item.price, item.grants]), [
     [PROFILE_ITEMS[0], 'profile-cosmetic', 20, [{slot: 'plate', value: 'pitlane-ticket'}]],
     [PROFILE_ITEMS[1], 'profile-cosmetic', 30, [{slot: 'stage', value: 'apex-observatory'}]],
     [PROFILE_ITEMS[2], 'profile-cosmetic', 50, [{slot: 'stripe', value: 'vector-ribbon'}]]]);
-  assert.equal(SHOP_CATALOG.length, 9);
+  assert.equal(SHOP_CATALOG.length, 11);
   assert.ok(SHOP_CATALOG.every(item => !('style' in item) && Object.isFrozen(item) && Object.isFrozen(item.grants[0])));
 });
 
@@ -739,7 +739,7 @@ test('profile shop: explicit version-2 HTTP contract supports claim purchase and
   const post = (path, body) => handleCurrencyRequest(new Request('https://test.invalid' + path,
     {method: 'POST', body: JSON.stringify({accountId: ACCOUNT, ...body})}), options);
   const catalog = await (await get('/v1/shop/catalog')).json(); assert.equal(catalog.version, 2);
-  assert.equal(catalog.kind, 'profile-cosmetic'); assert.deepEqual(catalog.items, SHOP_CATALOG);
+  assert.equal(catalog.kind, 'profile-cosmetic'); assert.deepEqual(catalog.items, SHOP_CATALOG.filter(item=>!['profile-porcelain-ink','profile-harbor-night'].includes(item.id)));
   const claim = await post('/v1/currency/claim', {requestId: 'http-all-milestones', rewardId: 'milestones'});
   assert.equal(claim.status, 200); assert.equal((await claim.json()).delta, 100);
   const purchase = await post('/v1/shop/purchase', {requestId: 'http-profile-purchase', itemId: PROFILE_ITEMS[0], ...f.quote(PROFILE_ITEMS[0])});
@@ -1243,8 +1243,8 @@ test('catalog bound version and original compatibility identities fail closed be
 });
 
 
-test('actual nine-item catalog buys all slots atomically and retains constant seven-read ownership', async () => {
- const f=fixture(),total=SHOP_CATALOG.reduce((sum,item)=>sum+item.price,0);assert.equal(total,273);f.funds(total);
+test('actual eleven-item catalog buys all slots atomically and retains constant seven-read ownership', async () => {
+ const f=fixture(),total=SHOP_CATALOG.reduce((sum,item)=>sum+item.price,0);assert.equal(total,355);f.funds(total);
  const bought=[];
  for(const item of SHOP_CATALOG){
   const cmd=f.command('purchase',{itemId:item.id}),start=f.calls.length,commits=f.commits.length;
@@ -1261,7 +1261,7 @@ test('actual nine-item catalog buys all slots atomically and retains constant se
   assert.deepEqual(replay,{...outcome,duplicate:true});assert.deepEqual(f.docs,before);
   assert.equal(f.calls.slice(replayStart).filter(call=>call.route.includes('?transaction=')).length,3);
  }
- assert.equal((await f.run('wallet')).balance,0);assert.equal(f.commits.length,9);
+ assert.equal((await f.run('wallet')).balance,0);assert.equal(f.commits.length,11);
  for(const item of SHOP_CATALOG){const {slot,value}=item.grants[0];assert.ok(f.docs.get(ENT).data[slot].includes(value));}
  const provenance=copy(f.docs.get(ENT).data.purchased);
  for(const item of SHOP_CATALOG.slice(3))f.docs.delete(C.inventory+'/'+await keyFor([ACCOUNT,item.id]));
@@ -1280,12 +1280,12 @@ for(const slot of ['badge','title','emblem','serverIssued','purchased','communit
  });
 
 
-const EXPANDED_TRACK_TIERS = [[1,20],[5,30],[20,50],[35,30],[50,40],[70,50],[89,60]];
-test('server track curve pays exactly the bounded seven immutable tiers at each threshold',async()=>{
+const EXPANDED_TRACK_TIERS = [[1,20],[5,30],[20,50],[24,6],[30,10],[35,30],[42,12],[46,14],[50,40],[60,16],[65,20],[70,50],[75,24],[85,30],[89,60]];
+test('server track curve pays exactly the bounded immutable tiers at each threshold',async()=>{
  const {CURRENCY_MILESTONES}=await import('../src/currency-wallet.js');
  assert.deepEqual(CURRENCY_MILESTONES.map(({threshold,amount})=>[threshold,amount]),EXPANDED_TRACK_TIERS);
  assert.ok(Object.isFrozen(CURRENCY_MILESTONES)&&CURRENCY_MILESTONES.every(Object.isFrozen));
- for(const count of [1,4,5,19,20,34,35,49,50,69,70,88,89]){
+ for(const count of [...new Set(EXPANDED_TRACK_TIERS.flatMap(([n])=>[n-1,n]).filter(n=>n>0))]){
   const f=fixture();setMilestones(f,count);const eligible=EXPANDED_TRACK_TIERS.filter(([threshold])=>threshold<=count);
   const result=await f.run('claim',{rewardId:'milestones'});
   assert.equal(result.delta,eligible.reduce((sum,[,amount])=>sum+amount,0));
@@ -1295,7 +1295,7 @@ test('server track curve pays exactly the bounded seven immutable tiers at each 
  }
 });
 
-test('every legacy individual-claim combination retroactively tops up to280 exactly once',async()=>{
+test('every legacy individual-claim combination retroactively tops up to412 exactly once',async()=>{
  for(let mask=0;mask<8;mask++){
   const f=fixture();setMilestones(f,89);let paid=0;
   for(let i=0;i<3;i++)if(mask&(1<<i)){
@@ -1303,24 +1303,24 @@ test('every legacy individual-claim combination retroactively tops up to280 exac
    assert.equal((await f.run('claim',{rewardId:'tracks-'+threshold})).delta,amount);
   }
   const cmd=f.command('claim',{rewardId:'milestones'}),result=await f.service().execute(UID,cmd);
-  assert.equal(result.delta,280-paid);assert.equal(result.balanceAfter,280);
+  assert.equal(result.delta,412-paid);assert.equal(result.balanceAfter,412);
   const before=copy(f.docs);assert.deepEqual(await f.service().execute(UID,cmd),{...result,duplicate:true});
   await assert.rejects(f.run('claim',{rewardId:'milestones'}),/reward_already_claimed/);
   for(const [threshold]of EXPANDED_TRACK_TIERS)await assert.rejects(f.run('claim',{rewardId:'tracks-'+threshold}),/reward_already_claimed/);
-  assert.deepEqual(f.docs,before);assert.equal((await f.run('wallet')).balance,280);
+  assert.deepEqual(f.docs,before);assert.equal((await f.run('wallet')).balance,412);
  }
 });
 
-test('historical100 aggregate receipt remains immutable after one retroactive180 top-up',async()=>{
+test('historical100 aggregate receipt remains immutable after one retroactive312 top-up',async()=>{
  const f=fixture();setMilestones(f,20);const old=f.command('claim',{rewardId:'milestones'});
  const historical=await f.service().execute(UID,old);assert.equal(historical.delta,100);
  const oldKey=C.receipts+'/'+await keyFor([UID,ACCOUNT,old.requestId]),receipt=copy(f.docs.get(oldKey));
  setMilestones(f,89);assert.deepEqual(await f.service().execute(UID,old),{...historical,duplicate:true});
  const start=f.calls.length,newer=await f.run('claim',{rewardId:'milestones'});
- assert.equal(newer.delta,180);assert.deepEqual(newer.claimedRewardIds,['tracks-35','tracks-50','tracks-70','tracks-89']);
+ assert.equal(newer.delta,312);assert.deepEqual(newer.claimedRewardIds,EXPANDED_TRACK_TIERS.slice(3).map(([threshold])=>'tracks-'+threshold));
  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,8);
  assert.deepEqual(f.docs.get(oldKey),receipt);assert.deepEqual(await f.service().execute(UID,old),{...historical,duplicate:true});
- assert.equal((await f.run('wallet')).balance,280);
+ assert.equal((await f.run('wallet')).balance,412);
 });
 
 test('new individual aliases use one aggregate and exactly five reads irrespective of tier count',async()=>{
@@ -1336,15 +1336,15 @@ test('new individual aliases use one aggregate and exactly five reads irrespecti
  }
  assert.equal((await f.run('claim',{rewardId:'milestones'})).delta,100);
  const grant=f.docs.get(C.grants+'/'+await keyFor([ACCOUNT,'milestones','lifetime'])).data;
- assert.equal(grant.rewardId,'milestones');assert.equal(grant.delta,280);assert.equal(grant.claimedRewardIds.length,7);
+ assert.equal(grant.rewardId,'milestones');assert.equal(grant.delta,412);assert.equal(grant.claimedRewardIds.length,15);
 });
 
 for(const [threshold]of EXPANDED_TRACK_TIERS.slice(3))test('concurrent new alias and batch deduplicate tracks-'+threshold,async()=>{
  const f=fixture();setMilestones(f,89);f.synchronize();
  const results=await Promise.allSettled([f.run('claim',{rewardId:'milestones'}),f.run('claim',{rewardId:'tracks-'+threshold})]);
- assert.equal(results.filter(result=>result.status==='fulfilled').reduce((sum,result)=>sum+result.value.delta,0),280);
+ assert.equal(results.filter(result=>result.status==='fulfilled').reduce((sum,result)=>sum+result.value.delta,0),412);
  assert.ok(results.filter(result=>result.status==='rejected').every(result=>result.reason.message==='reward_already_claimed'));
- assert.equal((await f.run('wallet')).balance,280);
+ assert.equal((await f.run('wallet')).balance,412);
  assert.equal([...f.docs.keys()].filter(key=>key.startsWith(C.grants+'/')).length,1);
 });
 
@@ -1367,9 +1367,9 @@ test('lost expanded claim reply recovers the exact receipt without re-awarding o
  const f=fixture();setMilestones(f,89);const cmd=f.command('claim',{rewardId:'milestones'});f.loseReply();
  await assert.rejects(f.service().execute(UID,cmd),/FIRESTORE_503/);
  const before=copy(f.docs),start=f.calls.length,result=await f.service().execute(UID,cmd);
- assert.equal(result.delta,280);assert.equal(result.duplicate,true);assert.deepEqual(f.docs,before);
+ assert.equal(result.delta,412);assert.equal(result.duplicate,true);assert.deepEqual(f.docs,before);
  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,3);
- assert.equal(f.commits.length,1);assert.equal((await f.run('wallet')).balance,280);
+ assert.equal(f.commits.length,1);assert.equal((await f.run('wallet')).balance,412);
 });
 
 
@@ -1378,7 +1378,7 @@ async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, h
  const {createShopTransport}=await import('../../../tools/shop-transport.mjs');
  const requests=[];let nonce=0;
  const storage={getItem:key=>local.get(key)??null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)};
- const transport=createShopTransport({revision:388,getToken:async()=> 'offline-fixture-token',fetch:async(url,init)=>{
+ const transport=createShopTransport({revision:404,getToken:async()=> 'offline-fixture-token',fetch:async(url,init)=>{
   const body=init.body?JSON.parse(init.body):null,row={path:new URL(url).pathname,method:init.method,body};requests.push(row);
   if(body){const saved=JSON.parse(local.get('polytrack-shop-pending-v1:'+ACCOUNT));assert.equal(saved.requestId,body.requestId);}
   const response=await handleCurrencyRequest(new Request(url,init),{env:{CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION,
@@ -1393,13 +1393,13 @@ async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, h
  return {store,requests,local};
 }
 
-test('regression388: real seven-tier claim completes with fresh confirmed280 wallet, fixed costs and exact serialized request',async t=>{
+test('regression388: real expanded-tier claim completes with fresh confirmed412 wallet, fixed costs and exact serialized request',async t=>{
  t.mock.method(globalThis,'fetch',()=>assert.fail('no real network'));
  const f=fixture();setMilestones(f,89);const client=await milestoneClient(f);await client.store.load();
  const start=f.calls.length,commits=f.commits.length,requests=client.requests.length;
  const result=await client.store.claim('milestones',{confirmed:true});
- assert.equal(result.outcome.delta,280);assert.equal(result.wallet.status,'confirmed');assert.equal(result.wallet.balance,280);
- assert.equal(client.store.state().wallet.balance,280);assert.equal(client.store.state().busy,false);assert.equal(client.local.size,0);
+ assert.equal(result.outcome.delta,412);assert.equal(result.wallet.status,'confirmed');assert.equal(result.wallet.balance,412);
+ assert.equal(client.store.state().wallet.balance,412);assert.equal(client.store.state().busy,false);assert.equal(client.local.size,0);
  const calls=f.calls.slice(start),sent=client.requests.slice(requests);
  assert.equal(calls.filter(call=>call.route.includes('?transaction=')).length,15);
  assert.equal(f.commits.length-commits,1);assert.equal(f.commits.at(-1).writes.length,3);
@@ -1513,7 +1513,7 @@ test('a future sellable earned marker disables its coin condition without granti
 test('concurrent achievements and existing milestones commit additive policies once, not per cosmetic',async()=>{
  const f=fixture();f.put(ENT,await fullCoinEvidence());f.synchronize();
  const result=await Promise.all([claimAchievements(f),f.run('claim',{rewardId:'milestones'})]);
- assert.equal(result.reduce((sum,item)=>sum+item.delta,0),502);assert.equal((await f.run('wallet')).balance,502);
+ assert.equal(result.reduce((sum,item)=>sum+item.delta,0),634);assert.equal((await f.run('wallet')).balance,634);
  assert.equal(f.commits.length,2);assert.ok(f.commits.every(commit=>commit.writes.length===3));
 });
 
@@ -1614,7 +1614,7 @@ test('live HTTP catalog and wallet never return Workshop IDs unknown to older cl
  for(const [i,[itemId,expectedPrice]] of [['workshop-sticker-hazard-band',18],['workshop-sticker-vector-wing',48]].entries())await service.execute(UID,f.command('purchase',{itemId,catalogVersion:2,expectedPrice,expectedWalletRevision:i+1}));
  const options={env,store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT};
  const get=(path,rev)=>handleCurrencyRequest(new Request('https://test.invalid'+path,{headers:rev?{'X-PolyTrack-Revision':String(rev)}:{}}),options).then(r=>r.json());
- for(const [revision,expected] of [[null,0],[375,0],[376,2],[381,2],[382,4],[383,4],[384,10],[999,10]]){
+ for(const [revision,expected] of [[null,0],[375,0],[376,2],[381,2],[382,4],[383,4],[384,10],[402,10],[403,10],[404,16],[999,16]]){
   const start=f.calls.length;
   const catalog=await get('/v1/shop/catalog?workshop=1',revision);
   assert.equal(catalog.items.filter(i=>i.kind.startsWith('workshop-')).length,expected);
@@ -1626,7 +1626,7 @@ test('live HTTP catalog and wallet never return Workshop IDs unknown to older cl
 
 test('all six new Workshop designs buy and project exactly their fixed slots at unchanged wallet read cost',async()=>{
  const {WORKSHOP_SHOP_CATALOG}=await import('../../../tools/workshop-sticker-shop-catalog.mjs');
- const offers=WORKSHOP_SHOP_CATALOG.slice(-6),f=fixture(),service=createCurrencyService({store:f.store,now:()=>AT,workshopStickersEnabled:true,includeWorkshopStickers:true});
+ const offers=WORKSHOP_SHOP_CATALOG.filter(item=>['ceramic-sheen','northstar-pin','timing-pod','marshal-lamps','signal-bar','switchback'].includes(item.grants[0].value)),f=fixture(),service=createCurrencyService({store:f.store,now:()=>AT,workshopStickersEnabled:true,includeWorkshopStickers:true});
  f.funds(offers.reduce((sum,item)=>sum+item.price,0));
  for(const [i,item] of offers.entries()){
   const receipt=await service.execute(UID,f.command('purchase',{itemId:item.id,catalogVersion:2,expectedPrice:item.price,expectedWalletRevision:i+1}));
@@ -1636,4 +1636,18 @@ test('all six new Workshop designs buy and project exactly their fixed slots at 
  const start=f.calls.length,wallet=await service.execute(UID,f.command('wallet'));
  assert.equal(wallet.balance,0);assert.deepEqual(wallet.ownedItemIds,offers.map(item=>item.id));
  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,7);
+});
+
+test('older clients claim original milestones and newer clients top up the same wallet once',async()=>{
+ const f=fixture();setMilestones(f,89);
+ const options={env:{CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION},store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT};
+ const claim=(rev,requestId,rewardId='milestones')=>handleCurrencyRequest(new Request('https://test.invalid/v1/currency/claim',{
+  method:'POST',headers:{'X-PolyTrack-Revision':String(rev),'Content-Type':'application/json'},body:JSON.stringify({accountId:ACCOUNT,requestId,rewardId})}),options);
+ const legacy=await claim(402,'legacy-006');assert.equal(legacy.status,200);
+ const original=await legacy.json();assert.equal(original.delta,280);assert.equal(original.claimedRewardIds.length,7);
+ const rejected=await claim(402,'legacy-007','tracks-24');assert.equal(rejected.status,400);
+ const extended=await claim(404,'latest-008');assert.equal(extended.status,200);
+ const topUp=await extended.json();assert.equal(topUp.delta,132);assert.equal(topUp.balanceAfter,412);
+ assert.equal(topUp.claimedRewardIds.length,8);
+ assert.equal(f.commits.length,2);assert.ok(f.commits.every(c=>c.writes.length===3));
 });

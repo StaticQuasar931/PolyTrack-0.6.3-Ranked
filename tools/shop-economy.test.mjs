@@ -13,22 +13,23 @@ test('review uses exact existing backend rewards and immutable prices, no altern
     {id: 'profile-vector-ribbon', price: 50},
     {id: 'profile-petrol', price: 16}, {id: 'profile-navy-secondary', price: 20},
     {id: 'profile-rail', price: 32}, {id: 'profile-rally-lines', price: 36},
-    {id: 'profile-book-serif', price: 45}, {id: 'profile-copper-ink', price: 24}
+    {id: 'profile-book-serif', price: 45}, {id: 'profile-copper-ink', price: 24},
+    {id: 'profile-porcelain-ink', price: 18}, {id: 'profile-harbor-night', price: 64}
   ]);
   assert.equal(CURRENT_REWARDS.login, 8);
   assert.ok(Object.isFrozen(PRICES) && PRICES.every(Object.isFrozen));
   assert.throws(() => {PRICES[0].price = 1;}, TypeError);
 });
-test('milestone totals are exact, once-per-tier and bounded at 280', () => {
-  assert.deepEqual([0, 1, 4, 5, 19, 20, 34, 35, 49, 50, 69, 70, 88, 89].map(milestoneCredits), [0, 20, 20, 50, 50, 100, 100, 130, 130, 170, 170, 220, 220, 280]);
-  assert.equal(MILESTONES.reduce((sum, item) => sum + item.credits, 0), 280);
+test('milestone totals are exact, once-per-tier and bounded at 412', () => {
+  assert.deepEqual([0, 1, 4, 5, 19, 20, 34, 35, 49, 50, 69, 70, 88, 89].map(milestoneCredits), [0,20,20,50,50,100,116,146,172,212,248,298,352,412]);
+  assert.equal(MILESTONES.reduce((sum, item) => sum + item.credits, 0), 412);
 });
 test('independent affordability includes login-only and all milestone combinations accurately', () => {
   const days = tracks => PRICES.map(item => currentAffordability(item.price, {serverRecordedTracks: tracks}).loginDaysNeeded);
-  assert.deepEqual(days(0), [3, 4, 7, 2, 3, 4, 5, 6, 3]);
-  assert.deepEqual(days(1), [0, 2, 4, 0, 0, 2, 2, 4, 1]);
-  assert.deepEqual(days(5), Array(9).fill(0));
-  assert.deepEqual(days(20), Array(9).fill(0));
+  assert.deepEqual(days(0), [3,4,7,2,3,4,5,6,3,3,8]);
+  assert.deepEqual(days(1), [0,2,4,0,0,2,2,4,1,0,6]);
+  assert.deepEqual(days(5), [...Array(10).fill(0),2]);
+  assert.deepEqual(days(20), Array(11).fill(0));
   assert.equal(currentAffordability(20, {serverRecordedTracks: 1}).minimumClaimVisits, 1);
   assert.equal(currentAffordability(20, {bankedCredits: 20}).minimumClaimVisits, 0);
   assert.equal(currentAffordability(340, {serverRecordedTracks: 20}).loginDaysNeeded, 30);
@@ -41,7 +42,7 @@ test('bad numeric inputs, unknown model and malformed weekdays fail rather than 
 });
 test('current login-only affordability is 3/4/7 calendar days; no play reward is invented', () => {
   const result = simulate(SCENARIOS[0], {horizonDays: 90});
-  assert.deepEqual(PRICES.map(item => result.targets[item.id].calendarDay), [3, 4, 7, 2, 3, 4, 5, 6, 3]);
+  assert.deepEqual(PRICES.map(item => result.targets[item.id].calendarDay), [3,4,7,2,3,4,5,6,3,3,8]);
   assert.equal(result.earned, 720); assert.equal(result.fullSessionMinutes, 0);
   assert.ok(result.ledger.every(row => row.participationAward === 0 && row.performanceAward === 0));
 });
@@ -53,10 +54,10 @@ test('current new player earns first cosmetic on first server-recorded track; ta
     {calendarDay: 3, earned: 36},
     {calendarDay: 8, earned: 52},
     {calendarDay: 1, earned: 28}, {calendarDay: 1, earned: 28}, {calendarDay: 3, earned: 36},
-    {calendarDay: 3, earned: 36}, {calendarDay: 8, earned: 52}, {calendarDay: 1, earned: 28}
+    {calendarDay: 3, earned: 36}, {calendarDay: 8, earned: 52}, {calendarDay: 1, earned: 28}, {calendarDay:1,earned:28}, {calendarDay:10,earned:90}
   ]);
-  assert.equal(result.ledger.reduce((sum, row) => sum + row.milestoneAward, 0), 280);
-  assert.equal(result.earned, result.sessions * 8 + 280);
+  assert.equal(result.ledger.reduce((sum, row) => sum + row.milestoneAward, 0), 412);
+  assert.equal(result.earned, result.sessions * 8 + 412);
   assert.equal(result.priceTargets, 'independent, no spending');
 });
 test('current advanced play time/performance has no recurring currency advantage after milestones', () => {
@@ -98,10 +99,10 @@ test('new/casual/advanced scenario day targets are stable and explicitly distinc
     return PRICES.map(item => result.targets[item.id].calendarDay);
   });
   // Current: 8 per visit plus lifetime milestones; targets never spend credits.
-  assert.deepEqual(targets('current'), [[1, 3, 8, 1, 1, 3, 3, 8, 1], Array(9).fill(1), Array(9).fill(1), [1, 2, 3, 1, 1, 2, 2, 3, 1]]);
+  assert.deepEqual(targets('current'), [[1,3,8,1,1,3,3,8,1,1,10],[...Array(10).fill(1),3],Array(11).fill(1),[1,2,3,1,1,2,2,3,1,1,3]]);
   // Draft new player: day 1 = 20 milestone + 20 participation; day 3 = 60.
   // Prior-five/20 tracks already cover all prices; daily two participations = 60.
-  assert.deepEqual(targets('draft'), [[1, 1, 3, 1, 1, 1, 1, 3, 1], Array(9).fill(1), Array(9).fill(1), Array(9).fill(1)]);
+  assert.deepEqual(targets('draft'), [[1,1,3,1,1,1,1,3,1,1,5],Array(11).fill(1),Array(11).fill(1),[...Array(10).fill(1),2]]);
   const draftNew = simulate(SCENARIOS[1], {model: 'draft', horizonDays: 3});
   assert.deepEqual(draftNew.ledger.map(({calendarDay, loginAward, participationAward, milestoneAward, earned}) =>
     ({calendarDay, loginAward, participationAward, milestoneAward, earned})), [
@@ -123,11 +124,11 @@ test('simulation is deterministic, does not mutate inputs/backend constants and 
 
 test('Style Coins is display-only and collection curve supports casual visits and bounded grinders',()=>{
  assert.equal(CURRENCY_DISPLAY_NAME,'Style Coins');const total=PRICES.reduce((sum,item)=>sum+item.price,0);
- assert.equal(total,273);
+ assert.equal(total,355);
  assert.deepEqual([0,1,5,20,35,50,70,89].map(serverRecordedTracks=>
-  currentAffordability(total,{serverRecordedTracks}).loginDaysNeeded),[35,32,28,22,18,13,7,0]);
- assert.equal(milestoneCredits(89)-total,7);
- const result=review();assert.equal(result.currencyDisplayName,'Style Coins');assert.equal(result.lifetimeTrackCap,280);
+  currentAffordability(total,{serverRecordedTracks}).loginDaysNeeded),[45,42,39,32,27,18,8,0]);
+ assert.equal(milestoneCredits(89)-total,57);
+ const result=review();assert.equal(result.currencyDisplayName,'Style Coins');assert.equal(result.lifetimeTrackCap,412);
  assert.deepEqual(result.claimCosts.batch,{reads:8,writes:3});
  assert.deepEqual(result.claimCosts.newIndividual,{reads:5,writes:3});
  assert.deepEqual(result.claimCosts.wallet,{reads:7,writes:0});

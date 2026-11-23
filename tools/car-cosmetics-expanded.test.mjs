@@ -5,7 +5,7 @@ import {carAttachmentParts,carAttachmentFrames} from './car-cosmetics-geometry.m
 import {readCarCosmetic,saveCarCosmetic,saveCarVisuals,mergeCarVisualPreferences} from './car-cosmetics.mjs';
 import {createNativeCarAppearance} from './car-cosmetics-materials.mjs';
 const account='c'.repeat(64);
-test('catalog has frozen stable IDs and no invented purchases or prices',()=>{assert(Object.isFrozen(C.finishes[1]));assert.deepEqual(C.accessories.map(i=>i.id),['none','fin','beacon','aerial','roofbox','crown','halo','roof-vent','intake','rival-beacon','pace-light']);assert(!/price|owned|purchase|firebase/i.test(JSON.stringify(C)));assert.deepEqual(normalizeCarSelection({finish:'alien'}),C.defaults);});
+test('catalog has frozen stable IDs and no invented purchases or prices',()=>{assert(Object.isFrozen(C.finishes[1]));assert.deepEqual(C.accessories.map(i=>i.id),['none','fin','beacon','aerial','roofbox','crown','halo','roof-vent','intake','rival-beacon','pace-light','timing-pod']);assert(!/price|owned|purchase|firebase/i.test(JSON.stringify(C)));assert.deepEqual(normalizeCarSelection({finish:'alien'}),C.defaults);});
 test('explicitly free workshop IDs work locally; host policy can deny or restrict all selections',()=>{const s={accessory:'fin',finish:'satin',emblem:'diamond',front:'lamps'};assert.deepEqual(authorizeCarSelection(s,account),{...s,rear:'none',sticker:'none'});assert.equal(carSelectionAllowed(s,account),true);assert.equal(carSelectionAllowed({...s,finish:'paid-unknown'},account),false);assert.equal(carSelectionAllowed(s,account,()=>false),false);assert.equal(carSelectionAllowed(s,account,()=>Promise.resolve(true)),false);assert.equal(carSelectionAllowed(s,account,()=>{throw Error();}),false);assert.equal(carSelectionAllowed(s,account,q=>q.accountId===account),true);assert.equal(carSelectionAllowed(s,'other',q=>q.accountId===account),false);});
 test('new visual saves preserve legacy paint timestamp and reject invalid IDs',()=>{const map=new Map(),s={getItem:k=>map.get(k),setItem:(k,v)=>map.set(k,v)};saveCarCosmetic(s,account,'fin',[1,2,3,4],123);assert(saveCarVisuals(s,account,{...C.defaults,finish:'metallic',emblem:'diamond'}));saveCarCosmetic(s,account,'beacon');assert.deepEqual(readCarCosmetic(s,account),{accessory:'beacon',finish:'metallic',emblem:'diamond',front:'none',paintColors:[1,2,3,4],paintSavedAt:123});assert.equal(saveCarVisuals(s,account,{...C.defaults,finish:'alien'}),false);assert.equal(JSON.parse(map.values().next().value).version,1);});
 test('every attachment is finite, closed, outward-wound and bounded across all three quality levels',()=>{for(const [category,list]of [['accessory',C.accessories],['emblem',C.emblems],['front',C.fronts]])for(const {id}of list){if(id==='none')continue;for(const quality of ['low','medium','high']){const parts=carAttachmentParts(category,id,quality);assert(parts.length<=8);assert(parts.reduce((n,p)=>n+p.triangles,0)<=120);for(const part of parts){if(part.decal){assert.equal(id,'crest');assert.equal(part.triangles,2);assert([...part.positions].every(Number.isFinite));const ys=[...part.positions].filter((_,i)=>i%3===1);assert(Math.max(...ys)-Math.min(...ys)<1e-7);continue;}const a=part.positions,edges=new Map();let volume=0;assert([...a].every(v=>Number.isFinite(v)&&Math.abs(v)<=.6));for(let i=0;i<a.length;i+=9){const p=[...a.slice(i,i+3)],q=[...a.slice(i+3,i+6)],r=[...a.slice(i+6,i+9)];volume+=(p[0]*(q[1]*r[2]-q[2]*r[1])+p[1]*(q[2]*r[0]-q[0]*r[2])+p[2]*(q[0]*r[1]-q[1]*r[0]))/6;for(const [x,y]of [[p,q],[q,r],[r,p]]){const key=[x.join(','),y.join(',')].sort().join('|');edges.set(key,(edges.get(key)||0)+1);}}assert(volume>0,category+id+' outward volume');assert([...edges.values()].every(n=>n===2),category+id+' closed faces');}}}});
@@ -161,4 +161,22 @@ test('stock Watch binds a saved PB to the matching active profile only during it
    spawn(Recording.deserialize('same'));
    assert.equal(seen.length,1);assert.equal(seen[0].car,owned);assert.equal(seen[0].replayOwner,account);
  } finally {adapter.dispose();}
+});
+
+test('the new paid Workshop set has real artwork, bounded geometry, and no free entitlement',async()=>{
+ const {WORKSHOP_SHOP_CATALOG,workshopShopCategory}=await import('./workshop-sticker-shop-catalog.mjs');
+ const {workshopOptionArt,meshThumbnail}=await import('./car-cosmetics.mjs');
+ const ids=['ceramic-sheen','northstar-pin','timing-pod','marshal-lamps','signal-bar','switchback'];
+ for(const id of ids){
+  const item=WORKSHOP_SHOP_CATALOG.find(i=>i.grants[0].value===id);
+  assert.ok(item&&item.price>0,id);
+  const category=workshopShopCategory(item);
+  assert.equal(carItemFeedback({category,id},account).allowed,false);
+  if(['accessory','emblem','front','rear'].includes(category)){
+   const parts=carAttachmentParts(category==='rear'?'front':category,id,'medium');
+   assert.ok(parts.length>0&&parts.reduce((n,p)=>n+p.triangles,0)<=120,id);
+   assert.ok(parts.every(p=>Array.from(p.positions).every(Number.isFinite)));
+   assert.equal(typeof meshThumbnail,'function');
+  }else assert.match(workshopOptionArt(category,id),/<(?:path|polygon)\b/);
+ }
 });

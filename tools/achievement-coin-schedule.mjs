@@ -42,3 +42,6 @@ export function validAchievementCoinReceipt(value) {
     Number.isSafeInteger(value.delta) && value.delta>0 &&
     ids.reduce((sum,id)=>sum+ACHIEVEMENT_COIN_SCHEDULE.find(entry=>entry.id===id).amount,0)===value.delta;
 }
+
+// Permanent reward IDs: new tiers must be additive and old amounts unchanged.
+export const STYLE_COIN_MILESTONES=Object.freeze([[1,20],[5,30],[20,50],[24,6],[30,10],[35,30],[42,12],[46,14],[50,40],[60,16],[65,20],[70,50],[75,24],[85,30],[89,60]].map(([threshold,amount])=>Object.freeze({rewardId:"tracks-"+threshold,threshold,amount})));

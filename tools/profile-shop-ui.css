@@ -68,3 +68,9 @@
 .profile-shop-dialog .sp-art>img{display:block;max-width:100%;width:170px;height:100%;max-height:100px;object-fit:contain;margin:auto}
 .profile-shop-dialog .sp-art>svg:not(.sp-sticker-swatch){width:64px;height:64px;max-height:92%;margin:auto;display:block}
 .profile-shop-dialog [data-sp-item-preview="profile-copper-ink"] .sp-sample-name{padding-inline:6px;line-height:1.25;overflow:hidden;text-overflow:ellipsis}
+
+@media (min-width:901px) and (min-height:620px){
+ .profile-shop-dialog .sp-live-layout{grid-template-columns:minmax(320px,36%) minmax(0,1fr)}
+ .profile-shop-dialog .sp-live-preview .profile-preview-stage{grid-template-columns:minmax(0,1fr)!important;min-height:clamp(245px,43dvh,580px)!important;align-content:center}
+ .profile-shop-dialog .sp-live-preview .profile-preview-stage>.overall-car-model{width:100%!important;height:clamp(180px,32dvh,470px)!important;max-width:none!important}
+}

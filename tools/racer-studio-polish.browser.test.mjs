@@ -47,7 +47,7 @@ async function fixture(page, withPolish = true) {
   await page.route('**/*', route => route.abort());
   await page.setContent(`<style>@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{margin:0;background:#0b1730;color:#fff;font-family:ForcedSquare,sans-serif}main{max-width:1260px;margin:auto;padding:16px;box-sizing:border-box}</style><main>${markup}</main><button id="outside">Outside studio</button>`);
   await page.addStyleTag({ content: baseCSS });
-  if (withPolish) await page.addStyleTag({ content: polish });
+  if (withPolish) await page.addStyleTag({ content: polish+'\n'+fs.readFileSync(new URL('./profile-shop-art.css',import.meta.url),'utf8') });
   await page.addScriptTag({ content: `const profileCosmeticDrafts=new Map(),cleanUserId=String,TRACK_CATALOG=new Map();const trackInfo=()=>({name:'Fixture track'}),trackThumbnailMarkup=()=>'';${favoriteRenderer}\n${setup}\nsetupRacerStudio(document);\ndocument.addEventListener('click',event=>{${tabHandler}});` });
   await page.locator('.profile-customizer').evaluate(node => { node.hidden = false; node.open = true; });
   await page.evaluate(() => document.fonts.ready);
@@ -144,5 +144,14 @@ test('reduced-effects Studio keeps the chosen saved backdrop instead of flatteni
  const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();await fixture(page);await page.locator('main').evaluate(node=>node.classList.add('overall-profile-card','cosmetic-stage-aqua'));
  const normal=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>getComputedStyle(node).backgroundImage);assert.match(normal,/gradient/);
  await page.addStyleTag({content:baseCSS});await page.locator('html').evaluate(node=>node.classList.add('sq-plain-racer-themes'));const reduced=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>getComputedStyle(node).backgroundImage);assert.equal(reduced,normal,'Reduced effects may remove motion but must preserve the saved Studio backdrop');
+ }finally{await browser.close();}
+});
+
+test('wide Studio preview uses most of the screen height and gives the car a larger stage',async()=>{
+ const browser=await chromium.launch({headless:true});try{const page=await browser.newPage({viewport:{width:1366,height:900}});await fixture(page);
+ const panel=await page.locator('.profile-customizer-preview').boundingBox();
+ const stage=await page.locator('.profile-preview-stage').boundingBox();
+ const car=await page.locator('.profile-preview-stage>.overall-car-model').boundingBox();
+ assert.ok(panel.height>=620);assert.ok(stage.height>=385);assert.ok(car.height>=280);
  }finally{await browser.close();}
 });

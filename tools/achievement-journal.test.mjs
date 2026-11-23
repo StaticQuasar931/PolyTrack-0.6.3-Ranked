@@ -64,7 +64,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock styles\. Use Sync wallet in the Shop to collect eligible Style Coins\. Device-only stats do not award coins\./);
+  assert.match(html,/Achievement tiers/); assert.match(html,/Cosmetic goals unlock styles\. Use Sync wallet in the Shop to collect eligible Style Coins\. Device-only stats do not award coins\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -139,14 +139,14 @@ test('sorting is stable, pure, unknown-last for progress, and counts actual unlo
 });
 
 
-test('seven actual currency rows use confirmed casual completions, never infer claims or money from local progress',()=>{
+test('real currency tiers use confirmed casual completions, never infer claims or money from local progress',()=>{
  const model=buildAchievementJournalModel({progress:{confirmed:{casualCompletionCount:20},local:{casualCompletionCount:89,raceCount:89,teleportCount:100}}});
- const rows=model.milestones.filter(x=>x.source==='currency');assert.equal(rows.length,7);assert.equal(model.counts.earned,0);
+ const rows=model.milestones.filter(x=>x.source==='currency');assert.equal(rows.length,15);assert.equal(model.counts.earned,0);
  assert.ok(rows.every(x=>!x.earned&&x.value===20&&x.reward.currency==='Style Coins'));
  const html=renderAchievementJournal({model,family:'currency',filter:'all'});
  assert.match(html,/Goal reached/);assert.match(html,/Open Shop/);assert.match(html,/Use Sync wallet in the Shop to collect eligible rewards/);
  assert.doesNotMatch(html,/already claimed|CLAIMED|coins earned|balanceAfter|wallet balance/i);
- assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,20]);
+ assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,30,24,20,20,16,14,12,10,6]);
 });
 
 test('eligible historical cosmetic achievements show exact coin bonuses without claiming a wallet grant',()=>{
@@ -160,17 +160,17 @@ test('eligible historical cosmetic achievements show exact coin bonuses without 
 test('all real tiers are discoverable by default and goals never masquerade as unlock counts',()=>{
  const model=buildAchievementJournalModel({cosmetics});
  const goals=model.milestones.filter(row=>row.source==='catalog');
- assert.equal(goals.length,22);
+ assert.equal(goals.length,27);
  assert.ok(goals.every(row=>row.metric!=='beta'));
  const unlocked=goals.reduce((sum,row)=>sum+row.rewards.length,0);
- assert.equal(model.milestones.filter(row=>row.source==='currency').length,7);
+ assert.equal(model.milestones.filter(row=>row.source==='currency').length,15);
  const ids=goals.flatMap(row=>row.rewards.map(reward=>reward.kind+':'+reward.id));
  assert.equal(new Set(ids).size,unlocked);
  const html=renderAchievementJournal({cosmetics});
- assert.ok(html.includes('24 cosmetic goals reached; '+(unlocked+2)+' cosmetic unlocks across these goals; 7 coin milestones'));
+ assert.ok(html.includes('29 cosmetic tiers and 15 coin tiers'));
  assert.match(html,/data-aj-active-family="all"/);
  assert.match(html,/data-aj-filter="all" aria-pressed="true"/);
- assert.equal((html.match(/data-aj-node="/g)||[]).length,31);
+ assert.equal((html.match(/data-aj-node="/g)||[]).length,44);
 });
 test('shared title and style bonuses remain one payment condition, not coins per cosmetic',()=>{
  const model=buildAchievementJournalModel({cosmetics,progress:{confirmed:{raceCount:5}}});
@@ -189,4 +189,16 @@ test('Owner Challenge shows four stages without awarding a duplicate coin or cos
  assert.deepEqual(stages.map(item=>[item.target,item.earned,item.rewards.length,item.coinReward?.amount??0]),[[1,true,1,20],[2,true,1,0],[3,false,1,40],[5,false,1,0]]);
  assert.deepEqual(model.nextIds.filter(id=>stages.some(item=>item.id===id)),[stages[2].id]);
  assert.match(renderAchievementJournal({model}),/Beat the owner/);
+});
+
+test('Extra Explorer and Route Scout appear in Discovery and use confirmed finish counts',()=>{
+ const model=buildAchievementJournalModel({cosmetics,progress:{confirmed:{extraCount:5},local:{extraCount:20}}});
+ const discovery=model.branches.find(branch=>branch.id==='discovery');
+ const rule=patch.match(/  function cosmeticUnlocked\([^\n]*\)\{[\s\S]*?\n  \}/)[0];
+ const unlocked=vm.runInNewContext(rule+';cosmeticUnlocked',{localExtraTrackCount:()=>20});
+ assert.equal(unlocked('extra:3',{extraCount:0}),true);
+ assert.equal(unlocked('extra:5',{extraCount:4}),false);
+ assert.equal(unlocked('extra:10',{extraCount:10}),true);
+ const titles=discovery.milestones.filter(row=>row.rewards.some(reward=>reward.kind==='title'));
+ assert.deepEqual(titles.map(row=>[row.id,row.earned,row.rewards[0].id]),[['discovery:extra:5',true,'extraExplorer'],['discovery:extra:10',false,'routeScout'],['discovery:extra:20',false,'atlasDriver']]);
 });
