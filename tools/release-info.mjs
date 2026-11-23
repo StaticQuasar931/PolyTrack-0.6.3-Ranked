@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 479,
+  "number": 480,
   "version": "0.6.3",
-  "revision": 405,
+  "revision": 406,
   "notes": [
-    "Fixed Achievements and the Style Shop not opening after an update.",
-    "Paid styles in Racer Studio now open their exact Shop listing. The live preview leaves more room for your racer details."
+    "Save your Workshop setup to show it on your car in Ranked Racers and racer profiles after the next snapshot."
   ],
-  "preparedAt": "2026-11-23T01:09:48.896Z",
-  "committedAt": "2026-11-23T01:09:50.000Z"
+  "preparedAt": "2026-11-23T01:40:54.789Z",
+  "committedAt": "2026-11-23T01:40:56.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

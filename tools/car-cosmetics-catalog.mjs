@@ -1,8 +1,8 @@
-const {WORKSHOP_SHOP_CATALOG,workshopShopCategory,workshopStickerOffer}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+import {WORKSHOP_SHOP_CATALOG,workshopShopCategory,workshopStickerOffer} from './workshop-sticker-shop-catalog.mjs?v=workshop-shared-1';
 
 /** Visual definitions and read-only equip policy. No purchases, network or wallet code. */
 const freeze=value=>{if(value&&typeof value==='object'){for(const item of Object.values(value))freeze(item);Object.freeze(value);}return value;};
-const {OWNER_CHALLENGE_WORKSHOP_REWARDS}=await import(new URL('./achievement-recommendations.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+import {OWNER_CHALLENGE_WORKSHOP_REWARDS} from './achievement-recommendations.mjs?v=workshop-shared-1';
 const ownerRewards=category=>OWNER_CHALLENGE_WORKSHOP_REWARDS.filter(item=>item.category===category).map(({id,label})=>({id,label}));
 const paid=category=>WORKSHOP_SHOP_CATALOG.filter(item=>workshopShopCategory(item)===category).map(item=>({id:item.grants[0].value,label:item.label}));
 export const CAR_COSMETIC_CATALOG=freeze({version:1,defaults:{accessory:'none',finish:'original',emblem:'none',front:'none',rear:'none',sticker:'none'},
