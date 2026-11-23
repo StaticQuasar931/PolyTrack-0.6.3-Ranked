@@ -101,6 +101,7 @@ const meshCategories=new Set(['emblem','accessory','front','rear']);
 const workshopGlyphs={
  original:'<path fill="#506786" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path d="m10 12 7 4 10-1m-10 1-4 7"/>',
  matte:'<path fill="#364960" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path stroke="#bdcbe1" d="M10 18h.01m4-4h.01m4 6h.01m4-5h.01"/>',
+ 'ceramic-sheen':'<path fill="#586e89" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path stroke="#f5eed8" stroke-width="2" d="m8 19 15-8m-12 10 8-4"/>',
  glasscoat:'<path fill="#365d71" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path stroke="#b9faff" d="m7 20 17-8m-13 10 14-7"/>',
  polished:'<path fill="#6988ad" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path stroke="#effcff" d="m9 19 13-8m-8 12 11-8M6 8h6m-3-3v6"/>',
  satin:'<path fill="#527caa" d="M5 21l5-9 10-4 7 7-4 8H8Z"/><path stroke="#a9cee8" d="m9 18 12-7m-9 10 13-8"/>',

@@ -22,6 +22,7 @@ const stickerShapes={
  ridge:[[0x223a6a,[[3,24],[12,8],[17,16],[21,10],[29,24]]],[0xfcf1d0,[[8,15],[12,8],[16,15],[12,13]]]],
  'solar-flare':[[0x512028,[[16,3],[25,7],[29,16],[25,25],[16,29],[7,25],[3,16],[7,7]]],[0xff9044,[[16,6],[22,10],[26,16],[22,22],[16,26],[10,22],[6,16],[10,10]]],[0xfff1c7,[[17,8],[19,14],[25,16],[18,18],[15,24],[14,18],[8,16],[14,14]]]],
  'tide-mark':[[0x163855,[[4,9],[14,4],[28,9],[28,21],[18,28],[4,23]]],[0x4ce0c2,[[5,15],[13,9],[18,9],[27,15],[19,14],[13,17],[5,21]]],[0xe4fbf7,[[10,23],[18,17],[22,16],[27,18],[22,20],[18,24]]]],
+ switchback:[[0x173044,[[3,7],[28,7],[28,25],[3,25]]],[0xffd683,[[6,19],[13,10],[17,10],[10,19]]],[0xe7fff7,[[14,22],[21,13],[26,13],[19,22]]]],
  'turn-marker':[[0x1b304b,[[4,7],[28,7],[28,25],[4,25]]],[0xffdc85,[[8,20],[8,11],[21,11],[21,8],[27,14],[21,20],[21,17],[14,17],[14,20]]]],
  'hazard-band':[[0x17223a,[[3,8],[29,8],[29,24],[3,24]]],[0xffcb62,[[5,22],[13,10],[18,10],[10,22]]],[0xffcb62,[[13,22],[21,10],[26,10],[18,22]]]],
  'vector-wing':[[0x17314d,[[4,8],[28,8],[28,17],[16,25],[4,17]]],[0x9beaff,[[6,11],[14,15],[16,20],[9,17]]],[0xf2faff,[[26,11],[18,15],[16,20],[23,17]]]],
@@ -49,6 +50,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='intake'){add(box(.24,.035,.23),dark);for(const x of [-.08,.08])add(box(.052,.08,.19,x,.064),metal);add(box(.21,.025,.19,0,.115),cyan);}
   else if(id==='rival-beacon'){add(box(.15,.028,.13),dark);add(cylinder(.055,.076,.026,8),0x71edc2,.28);add(box(.09,.02,.07,0,.112),gold);}
   else if(id==='pace-light'){add(box(.25,.035,.15),dark);add(box(.22,.026,.11,0,.048),metal);for(const x of [-.062,.062])add(box(.075,.03,.078,x,.071),0x5aeeff,.45);}
+  else if(id==='timing-pod'){add(box(.17,.03,.20),dark);add(box(.135,.068,.15,0,.056),metal);add(box(.105,.014,.035,0,.093,-.04),0x67edb5,.42);}
   else throw Error('Unknown roof visual');
  }else if(category==='sticker'){
   const shapes=shapesFor(id,number),digitsOut=[];if(!shapes)throw Error('Unknown sticker');
@@ -72,6 +74,7 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='shield'){add(box(.123,.105,.014,0,-.016,.008),dark);add(box(.09,.072,.01,0,-.011,.018),metal);add(box(.046,.042,.01,0,-.014,.026),cyan);}
   else if(id==='rival-pin'){add(box(.127,.081,.016,0,-.012,.012),dark);for(const x of [-.027,.027])add(box(.029,.043,.016,x,-.008,.026),0x83edcc);}
   else if(id==='apex-crest'){add(box(.14,.10,.016,0,-.016,.009),dark);for(const x of [-.031,.031])add(box(.04,.065,.012,x,-.008,.023),0xffd57d);}
+  else if(id==='northstar-pin'){add(box(.13,.106,.016,0,-.012,.009),dark);add(convex([[0,.047,.015],[.047,-.012,.015],[0,-.071,.015],[-.047,-.012,.015],[0,.047,.026],[.047,-.012,.026],[0,-.071,.026],[-.047,-.012,.026]],boxFaces),gold);add(box(.013,.05,.008,0,-.012,.029),0xfff2c2);}
   else throw Error('Unknown nose emblem');
  }else if(category==='front'){
   if(id==='rearbar'){add(box(.36,.045,.025,0,0,.0125),dark);add(box(.3,.016,.012,0,0,.031),cyan,.2);}
@@ -83,6 +86,8 @@ export function carAttachmentParts(category,id,density='low',variant){
   else if(id==='tail-lights'){for(const x of [-.09,.09]){add(box(.107,.035,.025,x,-.012,.013),dark);add(box(.076,.015,.01,x,-.009,.029),0xff523f,.28);}}
   else if(id==='nose-guard'){add(box(.33,.032,.05,0,-.019,.021),dark);add(box(.28,.014,.026,0,-.005,.046),metal);}
   else if(id==='afterburner'){add(box(.28,.04,.026,0,-.02,.015),dark);for(const x of [-.075,.075])add(box(.087,.019,.012,x,-.012,.031),0xfc6950,.4);}
+  else if(id==='marshal-lamps'){add(box(.32,.042,.038,0,-.012,.016),dark);for(const x of [-.105,.105])add(box(.061,.023,.015,x,-.008,.04),0xffcb73,.32);}
+  else if(id==='signal-bar'){add(box(.31,.036,.027,0,-.014,.015),dark);for(const x of [-.09,0,.09])add(box(.07,.015,.012,x,-.011,.032),0xff5550,.34);}
   else throw Error('Unknown front accessory');
  }else throw Error('Unknown attachment category');
  const result=Object.freeze(parts);if(number!==null){const numeric=[...cache.keys()].filter(item=>/^sticker:(race|rank)-number:/.test(item));if(numeric.length>=24)cache.delete(numeric[0]);}

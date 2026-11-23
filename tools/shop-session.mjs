@@ -1,4 +1,4 @@
-import {validAchievementCoinReceipt} from './achievement-coin-schedule.mjs';
+import {validAchievementCoinReceipt,STYLE_COIN_MILESTONES} from './achievement-coin-schedule.mjs';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
 const {WORKSHOP_SHOP_CATALOG, isWorkshopShopItem}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const currentItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_SHOP_CATALOG];
@@ -18,8 +18,7 @@ const account = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
 const item = id => typeof id === 'string' && /^[a-z0-9-]{1,80}$/.test(id);
 const request = id => typeof id === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(id);
 // Receipt validation only; the server remains the sole award/eligibility authority.
-const MILESTONE_AWARDS = Object.freeze({'tracks-1':20,'tracks-5':30,'tracks-20':50,
-  'tracks-35':30,'tracks-50':40,'tracks-70':50,'tracks-89':60});
+const MILESTONE_AWARDS = Object.freeze(Object.fromEntries(STYLE_COIN_MILESTONES.map(tier=>[tier.rewardId,tier.amount])));
 const copy = value => structuredClone(value);
 const fail = code => { throw new ShopSessionError(code); };
 

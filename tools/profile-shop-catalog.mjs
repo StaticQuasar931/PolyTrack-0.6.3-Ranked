@@ -12,5 +12,7 @@ export const PROFILE_SHOP_CATALOG=Object.freeze([
   item('profile-rail','Pit Rail',32,'edge','rail'),
   item('profile-rally-lines','Rally Lines',36,'stripe','rally-lines'),
   item('profile-book-serif','Book Serif',45,'nameFont','book'),
-  item('profile-copper-ink','Copper Ink',24,'nameColor','copper')
+  item('profile-copper-ink','Copper Ink',24,'nameColor','copper'),
+  item('profile-porcelain-ink','Porcelain Ink',18,'nameColor','porcelain'),
+  item('profile-harbor-night','Harbor Night',64,'theme','harbor-night')
 ]);

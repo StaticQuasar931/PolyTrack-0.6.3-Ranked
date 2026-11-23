@@ -33,7 +33,15 @@ export const PROFILE_SHOP_EXPANDED_DESIGNS = Object.freeze([
   design('profile-copper-ink','nameColor','copper','Copper Ink',24,
     'Warm, light copper lettering designed to stay legible on dark profile panels.',
     '<path fill="#1b3046" d="M0 0H320V88H0Z"/><text x="22" y="55" font-family="ForcedSquare,sans-serif" font-size="30" fill="#efba91">RACER</text><path fill="#efba91" d="M264 23H294V53H264Z"/>',
-    '<path fill="none" stroke="#b67c55" d="M23 67H294"/><path fill="#f7d4b6" d="M264 23H294V28H264Z"/>')
+    '<path fill="none" stroke="#b67c55" d="M23 67H294"/><path fill="#f7d4b6" d="M264 23H294V28H264Z"/>'),
+  design('profile-porcelain-ink','nameColor','porcelain','Porcelain Ink',18,
+    'Warm off-white lettering for dark nameplates.',
+    '<path fill="#1c2e4a" d="M0 0H320V88H0Z"/><text x="22" y="55" font-family="ForcedSquare,sans-serif" font-size="30" fill="#fff0d8">RACER</text>',
+    '<path fill="#fff0d8" d="M266 22h31v32h-31z"/>'),
+  design('profile-harbor-night','theme','harbor-night','Harbor Night',64,
+    'Deep harbor blue with sea-glass trim and a warm dock-light highlight.',
+    '<path fill="#183d53" d="M0 0H320V88H0Z"/><path fill="#102537" d="M0 69 320 12v76H0Z"/><path fill="#85dad5" d="M18 12h5v64h-5z"/><path fill="#edf6f5" d="M48 29h143v7H48zm0 18h95v5H48z"/>',
+    '<path fill="#ffd9a0" d="M274 21h22v4h-22z"/>')
 ]);
 const rally = density => {
   const item=PROFILE_SHOP_EXPANDED_DESIGNS.find(item=>item.slot==='stripe');
@@ -49,6 +57,9 @@ export const PROFILE_SHOP_EXPANDED_CSS = `/* Staged cosmetic paint only; does no
 .cosmetic-stripe-rally-lines{--sq-stripe-art:${rallyNormal};--sq-stripe-size:100% 100%;--profile-pattern:${rallyNormal};--profile-pattern-size:100% 100%}
 .cosmetic-name-font-book :is(.name-preview,.overall-name-main,.profile-preview-stage>span>b,.profile-identity h3,.showcase-row span b),.leaderboard-ui .cosmetic-name-font-book .name{font-family:'Palatino Linotype',Palatino,Georgia,serif!important;font-style:normal!important;letter-spacing:0}
 .cosmetic-name-color-copper{--name-ink:#efba91}
+.cosmetic-name-color-porcelain{--name-ink:#fff0d8}
+.cosmetic-theme-harbor-night,.leaderboard-ui>.container>button.main.sq-racer-cosmetic.cosmetic-theme-harbor-night{--cosmetic-a:#183d53;--cosmetic-b:#102537;--profile-a:#183d53;--profile-b:#102537;--profile-accent:#85dad5}
+.profile-cosmetic-choice.cosmetic-theme-harbor-night .profile-cosmetic-preview{background:linear-gradient(145deg,#183d53,#102537)!important}
 .profile-cosmetic-choice.cosmetic-theme-petrol .profile-cosmetic-preview{background:linear-gradient(145deg,#163e48,#102631)!important}
 .profile-cosmetic-choice.cosmetic-edge-rail .profile-cosmetic-preview{border-left:8px ridge #bacbd2}
 .profile-cosmetic-choice.cosmetic-stripe-rally-lines .profile-cosmetic-preview i{background:${rallyNormal} center/100% 100% no-repeat #1b3046}
