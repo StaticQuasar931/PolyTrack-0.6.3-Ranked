@@ -50,6 +50,24 @@ test('native Workshop thumbnails decorate both ranked rows and profile cars with
   for(const image of thumbnails)assert.match(image,/^data:image\/png;base64,/);
   assert.equal(thumbnails[0],thumbnails[1]);
   assert.notEqual(thumbnails[0],thumbnails[2]);
+  // Same real renderer, but the archived snapshot has no Workshop field.
+  const local=await page.evaluate(async row=>{
+   const {installCarCosmetics,saveCarVisuals}=await import('/tools/car-cosmetics.mjs');
+   window.__polytrackCarCosmetics?.dispose();
+   const saved=JSON.parse(row.workshopStyle);
+   const full={accessory:'none',finish:'original',emblem:'none',front:'none',rear:'none',sticker:'none',...saved};
+   const policy=()=>true;policy.podiumTier=()=>Object.keys(row.medals).find(key=>row.medals[key]>0);
+   installCarCosmetics({window,getAccountId:()=>row.userId,canEquip:policy});
+   if(!saveCarVisuals(localStorage,row.userId,full))throw Error('Fixture save unsuccessful');
+   window.__workshopThumbnailAudit({...row,workshopStyle:''},[['local-ranked','directory'],['local-profile',false]]);
+   return window.__polytrackCarCosmetics.savedThumbnail('b'.repeat(64));
+  },row);
+  assert.equal(local,null,'never use local cosmetics for another racer');
+  for(const id of ['local-ranked','local-profile']){
+   const image=page.locator('#'+id+' .overall-car-model img:nth-child(2).show');
+   await image.waitFor({state:'attached',timeout:25000});
+   assert.equal(await image.getAttribute('src'),thumbnails[0]);
+  }
   assert.equal(thumbnailCloudRequests,baselineRequests);
   if(process.env.WORKSHOP_THUMB_EVIDENCE)await page.screenshot({path:process.env.WORKSHOP_THUMB_EVIDENCE,animations:'disabled'});
  }finally{await browser.close();await server.close();}

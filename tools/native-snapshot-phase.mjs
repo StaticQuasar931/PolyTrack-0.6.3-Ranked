@@ -32,11 +32,13 @@ const demand=(value,message)=>{if(!value)throw Error('Native snapshot phase: '+m
 export function eventSourceCompanionMatchesProjection(board,id){
   const projected=publicEventBackup(board,id);
   if(isDeepStrictEqual(board,projected))return true;
-  if(!Array.isArray(board.pendingPlaybacks))return false;
-  // Preserve the original pinned object for proof pairing. Only the current
-  // display-name policy can differ when an old companion is projected again.
-  const pendingPlaybacks=board.pendingPlaybacks.map(row=>typeof row?.name==='string'?{...row,name:publicDisplayName(row.name)}:row);
-  return isDeepStrictEqual({...board,pendingPlaybacks},projected);
+  // Compare display names under the current policy, but keep the original
+  // pinned object for proof pairing. Every other field must still match.
+  const comparable={...board};
+  for(const key of ['entries','pendingPlaybacks']){
+    if(Array.isArray(board[key]))comparable[key]=board[key].map(row=>typeof row?.name==='string'?{...row,name:publicDisplayName(row.name)}:row);
+  }
+  return isDeepStrictEqual(comparable,projected);
 }
 const read=async(directory,file)=>JSON.parse(await fs.readFile(path.join(directory,file),'utf8'));
 const optional=async(directory,file)=>{try{return await read(directory,file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};

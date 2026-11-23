@@ -38,15 +38,17 @@ function exactFunction(source,name){
 }
 test('an existing pinned event source permits only display-name policy drift',()=>{
  const id='d_20261122',period={id,kind:'daily',trackId:track,startsAt:1000,endsAt:5000};
- const candidate=publicEventBackup({id,period,updatedAt:2500,entries:[],pendingPlaybacks:[{
+ const candidate=publicEventBackup({id,period,updatedAt:2500,entries:[{accountId:account,runId,timeMs:870,name:'Valid Racer',rank:1}],pendingPlaybacks:[{
    accountId:account,runId,timeMs:900,submittedAt:1900,replayHash,name:'Valid Racer',carStyle:'',
    pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'
  }]},id);
  assert.equal(candidate.pendingPlaybacks.length,1);
  candidate.pendingPlaybacks[0].name='Lil nga';
+ candidate.entries[0].name='Lil nga';
  const before=nativeEventSourceHash(candidate);
  assert.equal(eventSourceCompanionMatchesProjection(candidate,id),true);
  assert.equal(nativeEventSourceHash(candidate),before);
+ assert.equal(eventSourceCompanionMatchesProjection({...candidate,entries:[{...candidate.entries[0],privateField:true}]},id),false);
  assert.equal(eventSourceCompanionMatchesProjection({...candidate,pendingPlaybacks:[{...candidate.pendingPlaybacks[0],privateField:true}]},id),false);
 });
 test('retained ledger lookup preserves strict wildcard presence, every disposition, and duplicate rejection',async()=>{

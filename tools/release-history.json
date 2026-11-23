@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 480,
+    "number": 481,
     "version": "0.6.3",
-    "revision": 406,
+    "revision": 407,
     "notes": [
-      "Save your Workshop setup to show it on your car in Ranked Racers and racer profiles after the next snapshot."
+      "Your saved Workshop changes show up on your car previews right away, even before the next rankings update."
     ]
   },
   "entries": [
+    {
+      "number": 480,
+      "title": "Show saved Workshop styles on ranked car previews",
+      "commit": "8cdc65135a71f217e01d0bae5b612ae544f83e40",
+      "committedAt": "2026-11-23T01:40:56.000Z",
+      "notes": [
+        "Save your Workshop setup to show it on your car in Ranked Racers and racer profiles after the next snapshot."
+      ]
+    },
     {
       "number": 479,
       "title": "Fix Achievements and Style Shop loading",
@@ -174,15 +183,6 @@
       "notes": [
         "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
         "Official and Community podium rankings show the actual top podium finishes in that scope."
-      ]
-    },
-    {
-      "number": 456,
-      "title": "Bound manual canonical recovery reads",
-      "commit": "8928058369578971e0722124c2a88ac04b3e1bdc",
-      "committedAt": "2026-11-22T20:12:13.000Z",
-      "notes": [
-        "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
       ]
     }
   ],

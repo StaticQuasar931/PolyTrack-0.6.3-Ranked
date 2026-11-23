@@ -2,6 +2,7 @@ const {CAR_COSMETIC_CATALOG : C,normalizeCarSelection,validCarSelection,authoriz
 const {carStickerIcon,carAttachmentParts}=await import(new URL('./car-cosmetics-geometry.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {createCarAppearanceLayers}=await import(new URL('./car-cosmetics-materials.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {workshopStickerOffer}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {encodeWorkshopStyle}=await import(new URL('./public-workshop-style.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 export const CAR_PAINTS=C.paints;
 export const CAR_ACCESSORIES=Object.freeze(C.accessories.map(({id,label})=>Object.freeze([id,label])));
 const KEY='polytrack-car-cosmetics-v1:',keys=['accessory','finish','emblem','front','rear','sticker'];
@@ -126,10 +127,12 @@ export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low',c
  function close(owner){const s=garages.get(owner);if(!s)return;garages.delete(owner);s.dead=true;s.epoch++;s.observer.disconnect();s.layoutCleanup?.();s.controller.dispose();s.camera.reset();s.nativeTab?.classList.add('selected');s.cap.root.classList.remove('car-workshop-active');s.launcher.remove();s.panel.remove();}
  function persistSelection(s){const value=mergeCarVisualPreferences(readCarCosmetic(storage,s.accountId),s.selection,s.touchedKeys);const saved=saveCarVisuals(storage,s.accountId,value);if(saved){
    s.touchedKeys.clear();
+   thumbnailSaved=null;
    if(typeof onSaved==='function'){
     const save=(s.publishAttempt||0)+1;s.publishAttempt=save;
-    const update=shared=>{if(!s.dead&&s.publishAttempt===save)s.status.textContent=shared?'Workshop saved. Shared after the next snapshot.':'Workshop saved on this device. Save again when online to share.';};
-    Promise.resolve().then(()=>onSaved(s.accountId,value)).then(update,()=>update(false));
+    const update=(shared,note)=>{if(s.dead||s.publishAttempt!==save)return;if(!shared&&!s.touchedKeys.size)s.use.disabled=false;s.status.textContent=shared?'Workshop saved. Shared after the next snapshot.':'Workshop saved on this device. '+(note||'Save again when online to share.');};
+    Promise.resolve().then(()=>onSaved(s.accountId,value))
+      .then(shared=>update(shared),error=>update(false,error?.name==='Error'&&/^(Sign in to share|The server could not confirm|This sign-in is not linked|The profile changed|Sharing )/.test(error.message)?error.message:''));
    }
   }return saved;}
  function updateSavedState(s){const dirty=JSON.stringify(normalizeCarSelection(s.selection))!==JSON.stringify(normalizeCarSelection(s.savedSelection));s.panel.dataset.dirty=String(dirty);s.panel.querySelector('[data-save-state]').textContent=dirty?'Unsaved workshop style':'Saved on this device';return dirty;}
@@ -196,6 +199,16 @@ export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low',c
  let lastDensity=density();const qualityObserver=new window.MutationObserver(()=>{const next=density();if(next===lastDensity)return;lastDensity=next;for(const s of garages.values())refresh(s);for(const r of cars.values())r.controller.refresh();});qualityObserver.observe(document.documentElement,{attributes:true,attributeFilter:['class']});
  const undo=e=>{if(!(e.ctrlKey||e.metaKey)||e.shiftKey||e.altKey||e.key.toLowerCase()!=='z'||e.target?.closest?.('input,textarea,[contenteditable=true]'))return;const s=[...garages.values()].find(s=>s.expanded&&s.undo.length);if(!s)return;e.preventDefault();e.stopImmediatePropagation();s.selection=s.undo.pop();refresh(s);s.status.textContent='Preview undone. Saved selection is unchanged.';};document.addEventListener('keydown',undo,true);
  const guard=fn=>(...args)=>{try{return fn(...args);}catch{return false;}};
- const api=Object.freeze({requestOpen:()=>{requestedUntil=Date.now()+5000;},open:guard(open),close:guard(close),created:guard(created),carDisposed:guard(carDisposed),tick:guard(owner=>{const s=garages.get(owner);if(s&&safe(s.cap.getProfileToken)!==s.token)void identify(s);}),saved:guard(owner=>{const s=garages.get(owner);if(!s?.accountId||safe(s.cap.getProfileToken)!==s.token)return;const p=s.cap.getDraft();if(carChangedSelectionAllowed(s.selection,s.touchedKeys,s.accountId,policy)&&persistSelection(s)){s.savedSelection={...s.selection};updateSavedState(s);s.use.disabled=true;}return saveCarCosmetic(storage,s.accountId,readCarCosmetic(storage,s.accountId).accessory,[p.primaryHex,p.secondaryHex,p.frameHex,p.rimsHex]);}),accountChanged:guard(()=>{for(const car of [...cars.keys()])carDisposed(car);}),refreshEntitlements:guard(refreshEntitlements),setEquipPolicy:guard(fn=>{if(fn!==undefined&&typeof fn!=='function')return false;policy=fn;for(const s of garages.values())refresh(s);for(const car of [...cars.keys()])carDisposed(car);return true;}),inspect:()=>({garages:[...garages.values()].map(s=>({...s.controller.inspect(),draft:{...s.selection}})),cars:[...cars.values()].map(r=>r.controller.inspect())}),stats:()=>({garageViews:garages.size,garageAccessories:[...garages.values()].filter(s=>s.selection.accessory!=='none').length,controlledCars:cars.size,controlledAccessories:[...cars.values()].filter(r=>r.selection.accessory!=='none').length}),dispose(){if(disposed)return;disposed=true;qualityObserver.disconnect();document.removeEventListener('keydown',undo,true);for(const owner of [...garages.keys()])close(owner);for(const car of [...cars.keys()])carDisposed(car);link.remove();if(window.__polytrackCarCosmetics===api)delete window.__polytrackCarCosmetics;}});
+ let thumbnailSaved=null;
+ const savedThumbnail=id=>{
+  if(!validId(id)||id!==safe(getAccountId))return null;
+  if(thumbnailSaved?.id!==id){
+   let wire=null;
+   if(safe(()=>storage.getItem(KEY+id))!=null)wire=encodeWorkshopStyle(readCarCosmetic(storage,id));
+   thumbnailSaved={id,wire};
+  }
+  return thumbnailSaved.wire===null?null:{wire:thumbnailSaved.wire,tier:podiumTier(id),rank:policy?.overallRank?.(id)};
+ };
+ const api=Object.freeze({savedThumbnail,requestOpen:()=>{requestedUntil=Date.now()+5000;},open:guard(open),close:guard(close),created:guard(created),carDisposed:guard(carDisposed),tick:guard(owner=>{const s=garages.get(owner);if(s&&safe(s.cap.getProfileToken)!==s.token)void identify(s);}),saved:guard(owner=>{const s=garages.get(owner);if(!s?.accountId||safe(s.cap.getProfileToken)!==s.token)return;const p=s.cap.getDraft();if(carChangedSelectionAllowed(s.selection,s.touchedKeys,s.accountId,policy)&&persistSelection(s)){s.savedSelection={...s.selection};updateSavedState(s);s.use.disabled=true;}return saveCarCosmetic(storage,s.accountId,readCarCosmetic(storage,s.accountId).accessory,[p.primaryHex,p.secondaryHex,p.frameHex,p.rimsHex]);}),accountChanged:guard(()=>{thumbnailSaved=null;for(const car of [...cars.keys()])carDisposed(car);}),refreshEntitlements:guard(refreshEntitlements),setEquipPolicy:guard(fn=>{if(fn!==undefined&&typeof fn!=='function')return false;policy=fn;for(const s of garages.values())refresh(s);for(const car of [...cars.keys()])carDisposed(car);return true;}),inspect:()=>({garages:[...garages.values()].map(s=>({...s.controller.inspect(),draft:{...s.selection}})),cars:[...cars.values()].map(r=>r.controller.inspect())}),stats:()=>({garageViews:garages.size,garageAccessories:[...garages.values()].filter(s=>s.selection.accessory!=='none').length,controlledCars:cars.size,controlledAccessories:[...cars.values()].filter(r=>r.selection.accessory!=='none').length}),dispose(){if(disposed)return;disposed=true;qualityObserver.disconnect();document.removeEventListener('keydown',undo,true);for(const owner of [...garages.keys()])close(owner);for(const car of [...cars.keys()])carDisposed(car);link.remove();if(window.__polytrackCarCosmetics===api)delete window.__polytrackCarCosmetics;}});
  window.__polytrackCarCosmetics=api;return api;
 }
