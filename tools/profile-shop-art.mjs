@@ -2,8 +2,8 @@
  * The canonical shop catalog is owned separately; prices here are presentation only.
  * Load profile-shop-art.css after the existing cosmetic styles.
  */
-import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';
-import {PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS} from './profile-shop-expanded-designs.mjs';
+const {PROFILE_SHOP_CATALOG}=await import(new URL('./profile-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS}=await import(new URL('./profile-shop-expanded-designs.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 const ART = Object.freeze({
   ...Object.fromEntries(PROFILE_SHOP_EXPANDED_DESIGNS.map(item=>[item.itemId,item.art])),

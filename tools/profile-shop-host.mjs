@@ -1,5 +1,5 @@
 const {WORKSHOP_SHOP_CATALOG}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
-import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+const {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION}=await import(new URL('./profile-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {createProfileShopOwnedCache}=await import(new URL('./profile-shop-owned-cache.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 import {createProfileShopBalanceCache} from './profile-shop-balance-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
@@ -144,7 +144,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     const controls=studio.querySelector('.profile-customizer-controls')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorFrame=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorFrame=0,opening=null,clearUiPreview=null,focusUiItem=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
     let returnTab='studio',previewedItem=null,stopConnectionWatch=null,syncing=false,updateSync=null,canvasPairs=new Map(),dirtyCanvases=new Set();
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
@@ -249,7 +249,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       stopConnectionWatch?.();stopConnectionWatch=null;updateSync=null;
       document.defaultView.cancelAnimationFrame(mirrorFrame);mirrorFrame=0;canvasPairs.clear();dirtyCanvases.clear();
       mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;mirrorRoot=null;mirrorRow=null;
-      preview?.dispose();preview=null;previewedItem=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
+      preview?.dispose();preview=null;previewedItem=null;view?.dispose();view=null;clearUiPreview=null;focusUiItem=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
     }
     function returnTo(tab=returnTab,restoreFocus=true){
@@ -332,7 +332,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
               },onRestorePreview:()=>{previewedItem=null;preview?.clear();syncMirror();}
             }:{})}};
           };
-          const cleanup=mountShopPreview(root,decorate(options)),update=cleanup.update;clearUiPreview=cleanup.clearPreview;
+          const cleanup=mountShopPreview(root,decorate(options)),update=cleanup.update;clearUiPreview=cleanup.clearPreview;focusUiItem=cleanup.focusItem;
           cleanup.update=options=>update(decorate(options));return cleanup;
         },
         onCarPreview:preview?request=>preview.preview(request):undefined,onRestorePreview:()=>preview?.clear(),
@@ -366,12 +366,17 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();
       return current();
     }
-    const launchShop=()=>{if(!current())return false;void open();return true;};
+    const launchShop=target=>{
+      if(!current())return false;
+      const item=target&&PROFILE_SHOP_CATALOG.find(row=>row.grants.some(grant=>grant.slot===target.slot&&grant.value===target.value));
+      void open().then(shown=>{if(shown&&current()&&item)focusUiItem?.(item.id);}).catch(()=>{if(current())button.title='Could not open Style Shop. Try again.';});
+      return true;
+    };
     const closeShop=()=>{if(current())close(true);};
     const refreshPreview=()=>{if(!current()){close(true);return false;}syncMirror();return !!dialog?.open;};
     content.__profileShopOpen=launchShop;content.__profileShopClose=closeShop;content.__profileShopRefreshPreview=refreshPreview;
     content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));
-    const click=()=>{void open();};button.addEventListener('click',click);
+    const click=()=>{launchShop();};button.addEventListener('click',click);
     const mount={close,cleanup,refresh:reason=>{if(current())onOwnedUiChange?.(reason);}};mounts.add(mount);
     observeAuth(currentAuth());mount.refresh('cache');
     function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);if(content.__profileShopOpen===launchShop)delete content.__profileShopOpen;if(content.__profileShopClose===closeShop)delete content.__profileShopClose;if(content.__profileShopRefreshPreview===refreshPreview)delete content.__profileShopRefreshPreview;content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));}

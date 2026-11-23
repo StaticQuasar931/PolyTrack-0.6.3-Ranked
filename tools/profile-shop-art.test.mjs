@@ -140,8 +140,8 @@ test('future catalog mapping admits exact supported grants only and skips unknow
   let source=await fs.readFile(new URL('./profile-shop-art.mjs',import.meta.url),'utf8');
   const staged=PROFILE_SHOP_EXPANDED_DESIGNS.map(x=>({id:x.itemId,label:x.label,price:x.price,grants:[{slot:x.slot,value:x.value}]}));
   const future=[...PROFILE_SHOP_CATALOG.filter(x=>originalIds.has(x.id)),...staged,{id:'future-unsupported',grants:[{slot:'theme',value:'unknown'}]}];
-  source=source.replace("import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';",`const PROFILE_SHOP_CATALOG=${JSON.stringify(future)};`)
-    .replace("'./profile-shop-expanded-designs.mjs'",JSON.stringify(new URL('./profile-shop-expanded-designs.mjs',import.meta.url).href));
+  source=source.replace(/^const \{PROFILE_SHOP_CATALOG\}=.*$/m,`const PROFILE_SHOP_CATALOG=${JSON.stringify(future)};`)
+    .replace(/^const \{PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS\}=.*$/m,'const {PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS}=await import('+JSON.stringify(new URL('./profile-shop-expanded-designs.mjs',import.meta.url).href)+');');
   const api=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
   assert.equal(api.PROFILE_SHOP_DESIGNS.length,11);assert.equal(api.getProfileShopDesign('future-unsupported'),null);
   for(const item of PROFILE_SHOP_EXPANDED_DESIGNS){assert.equal(api.profileShopArt(item.slot,item.value).className,item.className);assert.equal(api.renderProfileShopArt(item.itemId),renderProfileShopArt(item.itemId));}

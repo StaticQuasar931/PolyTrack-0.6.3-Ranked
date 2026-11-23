@@ -95,7 +95,12 @@ test('actual Racer Studio markup fits desktop, portrait and landscape with reada
     assert.equal(focused.color, 'rgb(255, 218, 131)');
     assert.match(focused.inset, /rgb\(255, 218, 131\).*inset|inset.*rgb\(255, 218, 131\)/);
     await page.screenshot({ path: path.join(evidence, 'racer-studio-keyboard-focus.png') });
-    const locked = page.locator('.studio-panel:not([hidden]) [data-cosmetic-locked="true"]').first();
+    const paid = page.locator('.studio-panel:not([hidden]) [data-cosmetic-shop-link]').first();
+    assert.equal(await paid.getAttribute('aria-disabled'),null);
+    assert.match(await paid.getAttribute('aria-label'),/Open in Shop/);
+    const locked = page.locator('[data-cosmetic-locked="true"]:not([data-cosmetic-shop-link])').first();
+    const earnedPane=await locked.evaluate(node=>node.closest('[data-studio-panel]').dataset.studioPanel);
+    await page.locator('[data-studio-tab="'+earnedPane+'"]').click();
     assert.equal(await locked.getAttribute('aria-disabled'), 'true');
     assert.match(await locked.getAttribute('aria-label'), /Locked/);
     const lockStyle = await locked.evaluate(el => ({ opacity: getComputedStyle(el).opacity, note: getComputedStyle(el.querySelector('small')).fontSize }));
@@ -147,11 +152,12 @@ test('reduced-effects Studio keeps the chosen saved backdrop instead of flatteni
  }finally{await browser.close();}
 });
 
-test('wide Studio preview uses most of the screen height and gives the car a larger stage',async()=>{
+test('wide Studio preview uses the sidebar without an oversized car or nested scrolling',async()=>{
  const browser=await chromium.launch({headless:true});try{const page=await browser.newPage({viewport:{width:1366,height:900}});await fixture(page);
  const panel=await page.locator('.profile-customizer-preview').boundingBox();
  const stage=await page.locator('.profile-preview-stage').boundingBox();
  const car=await page.locator('.profile-preview-stage>.overall-car-model').boundingBox();
- assert.ok(panel.height>=620);assert.ok(stage.height>=385);assert.ok(car.height>=280);
+ assert.ok(panel.height>=580);assert.ok(stage.height>=145&&stage.height<250);assert.ok(car.height>=90&&car.height<=150);
+ assert.equal(await page.locator('.profile-customizer-preview').evaluate(node=>getComputedStyle(node).overflowY),'visible');
  }finally{await browser.close();}
 });

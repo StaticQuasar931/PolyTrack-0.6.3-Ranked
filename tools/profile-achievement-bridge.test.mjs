@@ -376,7 +376,8 @@ test('1366x768 native sticky preview stays inside its panel and both design acti
     assert.ok(b.x>=v.x&&b.x+b.width<=v.x+v.width,selector+' is not left/right cropped');
   }
   await page.screenshot({path:path.join(evidence,'racer-hub-studio-scrolled-1366x768.png'),animations:'disabled'});
-  await page.setViewportSize({width:1366,height:650});await page.waitForFunction(()=>Math.abs(parseFloat(document.querySelector('.ph-studio-panel').style.getPropertyValue('--ph-panel-height'))-document.querySelector('.ph-studio-panel').clientHeight)<1);
+  const beforeResize=await preview.evaluate(el=>el.offsetHeight);
+  await page.setViewportSize({width:1366,height:650});await page.waitForFunction(previous=>document.querySelector('.profile-customizer-preview').offsetHeight<previous,beforeResize);
   await check();
   await page.setViewportSize({width:390,height:844});
   assert.equal(await preview.evaluate(el=>getComputedStyle(el).position),'static');

@@ -89,10 +89,12 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
     if (!current() || !dialog.open || studioPanel.hidden || !studio) return;
     const preview = studio.querySelector('.profile-customizer-preview');
     if (!preview) return;
-    const panelBox = studioPanel.getBoundingClientRect(), previewBox = preview.getBoundingClientRect();
+    const panelBox = studioPanel.getBoundingClientRect();
     const paddingBottom = parseFloat(win.getComputedStyle(studioPanel).paddingBottom) || 0;
-    studioPanel.style.setProperty('--ph-panel-height',`${studioPanel.clientHeight}px`);
-    studioPanel.style.setProperty('--ph-preview-height',`${Math.max(0,Math.floor(panelBox.bottom - Math.max(panelBox.top,previewBox.top) - paddingBottom))}px`);
+    const note=studioPanel.querySelector('.ph-studio-note');
+    const headingHeight=note?note.offsetHeight+(parseFloat(win.getComputedStyle(note).marginBottom)||0):0;
+    const paddingTop=parseFloat(win.getComputedStyle(studioPanel).paddingTop)||0;
+    studioPanel.style.setProperty('--ph-preview-height',`${Math.max(0,Math.floor(panelBox.height-paddingTop-headingHeight-paddingBottom))}px`);
   }
   const previewResize = new win.ResizeObserver(measureStudio);
 

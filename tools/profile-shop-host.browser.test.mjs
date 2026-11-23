@@ -12,8 +12,9 @@ const evidence=process.env.SHOP_EVIDENCE_DIR||path.resolve(root,'../../2026-11-1
 const base='http://127.0.0.1:8123';
 let browser,patch,nativeFixture,hostSource,cosmeticFunctions,authHelperSource;
 const localFiles=new Map();
-async function serveFixture(route){
- const name=new URL(route.request().url()).pathname;
+async function serveFixture(route,warmCache=false){
+ const url=new URL(route.request().url()),name=url.pathname;
+ if(warmCache&&!url.search&&name==='/tools/achievement-coin-schedule.mjs')return route.fulfill({contentType:'text/javascript',body:'export const ACHIEVEMENT_COIN_SCHEDULE=[]; export const ACHIEVEMENT_COIN_POLICY_VERSION=2; export function achievementCoinForJournalId(){} export function validAchievementCoinReceipt(){return false;}'});
  if(name==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#192b57;color:white}.offline-note{padding:12px;background:#ffda83;color:#192b57;font:13px sans-serif}</style><aside class="offline-note">Offline integration test. Sample points, not a live balance.</aside><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><article class="overall-profile-card"><div id="content"></div></article></div></div>'});
  if(!/^\/tools\/[A-Za-z0-9_.-]+\.(mjs|css)$/.test(name)&&!['/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(name))return route.fulfill({status:404});
  if(!localFiles.has(name))localFiles.set(name,fs.readFile(path.join(root,name.slice(1))).catch(()=>null));
@@ -31,15 +32,17 @@ before(async()=>{
  browser=await chromium.launch({headless:true});await fs.mkdir(evidence,{recursive:true});
 });
 after(async()=>{await browser?.close();});
-async function fixture(t,{enabled=true,width=390,height=844,owned=[],reusePage=null,savedDesign=null,earned=[]}={}){
+async function fixture(t,{enabled=true,width=390,height=844,owned=[],reusePage=null,savedDesign=null,earned=[],warmCache=false}={}){
  const context=reusePage?reusePage.context():await browser.newContext({viewport:{width,height},reducedMotion:'reduce',serviceWorkers:'block'});if(!reusePage)t.after(()=>context.close());const page=reusePage||await context.newPage();
  if(!reusePage){
   page.setDefaultTimeout(5000);let external=0;
   page.on('pageerror',error=>console.log('HOST PAGE ERROR:',error.message));
-  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?serveFixture(route):(external++,route.abort()));
+  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?serveFixture(route,warmCache):(external++,route.abort()));
   page.noExternal=()=>assert.equal(external,0);
  }
- await page.goto(base);await page.evaluate(earned=>window.__fixtureEarned=earned,earned);await nativeFixture(page);await page.addStyleTag({url:base+'/tools/cosmetic-preview.css'});
+ await page.goto(base);
+ if(warmCache)await page.evaluate(()=>import('/tools/achievement-coin-schedule.mjs'));
+ await page.evaluate(earned=>window.__fixtureEarned=earned,earned);await nativeFixture(page);await page.addStyleTag({url:base+'/tools/cosmetic-preview.css'});
  await page.evaluate(async({A,owned,catalog,savedDesign,achievementReceipt})=>{
   window.PROFILE_COSMETICS_KEY='offline-confirmed-design';window.cosmeticEpoch=0;window.cosmeticResolveCache=new WeakMap();window.readCosmeticDirectory=()=>({entries:{}});window.readJsonStorage=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};if(savedDesign)localStorage.setItem(PROFILE_COSMETICS_KEY,JSON.stringify(savedDesign));
   window.activeAccount=A;window.tokenCalls=0;window.dbCalls=0;window.network=[];window.holdTokens=false;window.tokenWaiters=[];window.claims=[];window.claimReceipts=new Map();window.grantedRewards=new Set();
@@ -94,6 +97,23 @@ async function settleShop(page){const sync=page.locator('[data-shop-wallet-sync]
 async function reopenShop(page){await page.evaluate(()=>document.querySelector('#content').__profileShopClose());await openShop(page);await settleShop(page);}
 async function installClock(page){await page.evaluate(()=>{const wall=Date.now(),mono=performance.now();window.shopElapsed=0;Object.defineProperty(Date,'now',{configurable:true,value:()=>wall+shopElapsed});Object.defineProperty(performance,'now',{configurable:true,value:()=>mono+shopElapsed});});}
 async function assertConfirmedBalance(page){assert.equal(await page.locator('.sp-summary strong').innerText(),await page.evaluate(()=>serverWallet.balance+' Style Coins'));}
+
+test('cached old rewards module does not block Achievements or a paid Studio shortcut',async t=>{
+ const page=await fixture(t,{width:1366,height:900,warmCache:true});
+ await page.evaluate(()=>cleanup.open('achievements'));
+ await page.locator('[data-aj-root]').waitFor({state:'visible'});
+ await page.locator('[data-ph-tab="studio"]').click();
+ const choice=page.locator('[data-cosmetic-kind="plate"][data-cosmetic-value="pitlane-ticket"]');
+ const pane=await choice.evaluate(node=>node.closest('[data-studio-panel]').dataset.studioPanel);
+ await page.locator('[data-studio-tab="'+pane+'"]').click();
+ assert.equal(await choice.getAttribute('data-cosmetic-shop-link'),'');
+ await choice.press('Enter');
+ const item=page.locator('[data-sp-card="profile-pitlane-ticket"]');
+ await item.waitFor({state:'visible'});
+ assert.equal(await item.evaluate(node=>node===document.activeElement),true);
+ assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls+draftWrites),0);
+ page.noExternal();
+});
 
 test('production shop is release-stamped and resets before all three active-account writes',()=>{
  assert.match(patch,/const PROFILE_SHOP_ENABLED=true;/);assert.match(patch,/const extraCatalogRevision='[0-9]+'/);

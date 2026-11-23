@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 478,
+  "number": 479,
   "version": "0.6.3",
-  "revision": 404,
+  "revision": 405,
   "notes": [
-    "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
+    "Fixed Achievements and the Style Shop not opening after an update.",
+    "Paid styles in Racer Studio now open their exact Shop listing. The live preview leaves more room for your racer details."
   ],
-  "preparedAt": "2026-11-23T00:53:14.164Z",
-  "committedAt": "2026-11-23T00:53:15.000Z"
+  "preparedAt": "2026-11-23T01:09:48.896Z",
+  "committedAt": "2026-11-23T01:09:50.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

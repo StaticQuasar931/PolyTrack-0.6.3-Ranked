@@ -1,5 +1,5 @@
-import {validAchievementCoinReceipt,STYLE_COIN_MILESTONES} from './achievement-coin-schedule.mjs';
-import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+const {validAchievementCoinReceipt,STYLE_COIN_MILESTONES}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION}=await import(new URL('./profile-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {WORKSHOP_SHOP_CATALOG, isWorkshopShopItem}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const currentItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_SHOP_CATALOG];
 /** LOCAL DRAFT ONLY. Inject authenticated transport, synchronous Web Storage,

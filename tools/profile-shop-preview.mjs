@@ -1,4 +1,4 @@
-import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+const {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION}=await import(new URL('./profile-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const bindings=new WeakMap();
 const own=(value,key)=>value&&typeof value==='object'?Object.getOwnPropertyDescriptor(value,key)?.value:undefined;
 export class ProfileShopPreviewError extends Error {

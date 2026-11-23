@@ -179,6 +179,15 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore,onUndoDr
     if(target.matches(PUBLISH)){guardPublish(event);return;}
     const choice=target.closest(CHOICE);
     if(choice&&studio.contains(choice)){
+      if(choice.hasAttribute('data-cosmetic-shop-link')&&choice.dataset.cosmeticLocked==='true'){
+        stop(event);
+        const target={slot:choice.dataset.cosmeticKind,value:choice.dataset.cosmeticValue};
+        let host=studio.parentElement;
+        while(host&&!host.__profileShopOpen&&!host.__profileShopMount)host=host.parentElement;
+        const open=()=>host?.__profileShopOpen?.(target);
+        if(!open())void host?.__profileShopMount?.then(()=>{if(current()&&host.contains(choice))open();}).catch(()=>{});
+        return;
+      }
       if(choice.hasAttribute('data-cosmetic-try')||choice.dataset.cosmeticLocked==='true'){
         stop(event);preview({kind:choice.dataset.cosmeticKind,id:choice.dataset.cosmeticValue},choice);
       }else if(selected)clear('edit');
@@ -196,7 +205,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore,onUndoDr
     if(event.key==='Escape'&&selected){stop(event);clear('escape');return;}
     if(!['Enter',' '].includes(event.key))return;
     const choice=event.target?.closest?.(CHOICE);
-    if(choice&&studio.contains(choice)&&(choice.hasAttribute('data-cosmetic-try')||choice.dataset.cosmeticLocked==='true')){stop(event);preview({kind:choice.dataset.cosmeticKind,id:choice.dataset.cosmeticValue});}
+    if(choice&&studio.contains(choice)&&!choice.hasAttribute('data-cosmetic-shop-link')&&(choice.hasAttribute('data-cosmetic-try')||choice.dataset.cosmeticLocked==='true')){stop(event);preview({kind:choice.dataset.cosmeticKind,id:choice.dataset.cosmeticValue});}
     else if(event.target?.matches?.(PUBLISH)&&selected)stop(event);
   }
   function submit(event){if(selected||!current())stop(event);}

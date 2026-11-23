@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 478,
+    "number": 479,
     "version": "0.6.3",
-    "revision": 404,
+    "revision": 405,
     "notes": [
-      "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
+      "Fixed Achievements and the Style Shop not opening after an update.",
+      "Paid styles in Racer Studio now open their exact Shop listing. The live preview leaves more room for your racer details."
     ]
   },
   "entries": [
+    {
+      "number": 478,
+      "title": "Expand achievements and the Style Shop",
+      "commit": "03ef3fa07b6fc022caf8652743fc33b733604677",
+      "committedAt": "2026-11-23T00:53:15.000Z",
+      "notes": [
+        "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
+      ]
+    },
     {
       "number": 477,
       "title": "Fix archived names and track freshness",
@@ -173,15 +183,6 @@
       "committedAt": "2026-11-22T20:03:28.000Z",
       "notes": [
         "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
-      ]
-    },
-    {
-      "number": 454,
-      "title": "Revalidate exact retained snapshot proofs",
-      "commit": "3e4ed7a0df26608587a954d57ae6f5dd03b6f85f",
-      "committedAt": "2026-11-22T19:51:59.000Z",
-      "notes": [
-        "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
       ]
     }
   ],
