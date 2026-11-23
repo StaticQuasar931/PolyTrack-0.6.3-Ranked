@@ -252,9 +252,13 @@
 .profile-customizer .profile-customizer-preview .showcase-row .showcase-meta{display:flex;flex-wrap:wrap;gap:4px 8px;font:12px/1.4 sans-serif}
 .profile-customizer .profile-customizer-preview .showcase-row .showcase-meta>span:empty{display:none}
 
+.profile-customizer [data-cosmetic-shop-link]>small{color:#ffdd93!important;background:#3b2f27;border-color:#a98148}
+.profile-customizer [data-cosmetic-locked="true"]:not([data-cosmetic-shop-link])>small{color:#b4d7ef!important;background:#253a52}
+.profile-customizer [data-cosmetic-shop-link]:hover{border-color:#d2a85c!important}
+
 /* Keep the live racer visible while browsing controls on a wide screen. */
 @media (min-width:901px) and (min-height:620px){
- .profile-customizer .profile-customizer-preview{height:clamp(440px,72dvh,900px);box-sizing:border-box;overflow:auto;align-content:start}
- .profile-customizer .profile-customizer-preview .profile-preview-stage{grid-template-columns:minmax(0,1fr)!important;min-height:clamp(245px,43dvh,580px)!important;align-content:center}
- .profile-customizer .profile-customizer-preview .profile-preview-stage>.overall-car-model{width:100%!important;height:clamp(180px,32dvh,470px)!important;max-width:none!important}
+ .profile-customizer .profile-customizer-preview{min-height:clamp(380px,66dvh,710px);box-sizing:border-box;overflow:visible;align-content:start}
+ .profile-customizer .profile-customizer-preview .profile-preview-stage{grid-template-columns:minmax(0,42%) minmax(0,1fr)!important;min-height:clamp(130px,20dvh,200px)!important;align-items:center}
+ .profile-customizer .profile-customizer-preview .profile-preview-stage>.overall-car-model{width:100%!important;height:clamp(90px,14dvh,150px)!important;max-width:none!important}
 }

@@ -39,13 +39,15 @@ dialog.profile-hub { position:fixed; inset:0; width:100vw; max-width:none; heigh
 .profile-hub .profile-customizer>.profile-customizer-body { display:grid; grid-template-columns:minmax(260px,.72fr) minmax(0,1.7fr)!important; gap:24px!important; padding:0!important; background:transparent; }
 .profile-hub .profile-customizer-preview { position:sticky!important; top:0!important; align-self:start; }
 @media (min-width:851px) and (min-height:501px) {
-  .profile-hub .profile-customizer-preview {
-    max-height:var(--ph-preview-height,calc(var(--ph-panel-height,100dvh) - 32px))!important;
-    overflow-y:auto;
-    overflow-x:hidden;
-    overscroll-behavior:contain;
-    scrollbar-gutter:stable;
-    scrollbar-color:#7899c5 #14294e;
+  .profile-hub .profile-customizer .profile-customizer-preview {
+    top:0!important;
+    min-height:0;
+    height:var(--ph-preview-height,auto);
+    padding:14px!important;
+    gap:10px!important;
+    max-height:none!important;
+    overflow:visible;
+    box-sizing:border-box;
   }
 }
 .profile-hub .profile-customizer .studio-tabs { position:sticky; top:-1px; z-index:3; }

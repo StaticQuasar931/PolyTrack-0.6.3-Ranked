@@ -2,7 +2,7 @@
  * confirmed.casualCompletionCount is a hint for Shop checks, never proof of a grant.
  * No local count, raceCount, history length, or fabricated claim state is accepted.
  */
-import {STYLE_COIN_MILESTONES} from './achievement-coin-schedule.mjs';
+const {STYLE_COIN_MILESTONES}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 export {STYLE_COIN_MILESTONES};
 const counter=value=>Number.isSafeInteger(value)&&value>=0&&value<=89?value:null;
 export function buildStyleCoinAchievements(confirmed={}){
