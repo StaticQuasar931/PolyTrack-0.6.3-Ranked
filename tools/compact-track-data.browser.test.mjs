@@ -34,3 +34,16 @@ test('source states and locked refresh styling are present and interaction-neutr
   assert.match(css, /\[data-sq-snapshot-refresh-lock\][\s\S]*?cursor:\s*default\s*!important/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\][\s\S]*?transform:\s*none\s*!important/);
 });
+
+test('track age uses only the selected track confirmation and omits unknown age',()=>{
+ const start=patchSource.indexOf('  function trackFreshnessPresentation(');
+ const end=patchSource.indexOf('\n  function trackFreshnessSourceHtml(',start);
+ assert.ok(start>=0&&end>start);
+ const present=Function('durationLabel','ageLabel',patchSource.slice(start,end)+';return trackFreshnessPresentation;')(
+   milliseconds=>Math.floor(milliseconds/86400000)+'d',()=> '16 days ago');
+ const state={status:'snapshot',fetchedAt:Date.now()-16*86400000};
+ const now=Date.now();
+ assert.equal(present(state,{snapshotCapturedAt:now-12*86400000},false).sourceLine,'Snapshot 12d old');
+ assert.equal(present(state,{snapshotGeneration:94},true,'submitted PB').sourceLine,'Snapshot + submitted PB');
+ assert.equal(present(state,{},false).updateLine,'Standings changed 16 days ago');
+});

@@ -48,6 +48,20 @@ test('archive controls and month jumps work offline at desktop and mobile widths
     color:getComputedStyle(document.querySelector('input[type=search]')).backgroundColor}));
    assert.equal(metrics.overflow,false);assert.ok(metrics.height>=44);assert.equal(metrics.color,'rgb(20, 36, 81)');
    await page.screenshot({path:join(output,`archive-${width}.png`),fullPage:true});
+
+   await page.evaluate(async()=>{
+    const {mountArchiveView}=await import('/events/archive-view.mjs');
+    const period={id:'old-race',kind:'daily',trackName:'Paradise Palace',endsAt:Date.UTC(2026,8,1)};
+    const board={archived:true,entries:[{accountId:'racer-a',name:'Old archive name',identityUpdatedAt:123,verified:true,rank:1,timeMs:12345}]};
+    mountArchiveView(document.querySelector('main'),{periods:[period],snapshots:{[period.id]:board},resolveRacerName:row=>row.accountId==='racer-a'&&row.identityUpdatedAt===123?'Newest Racer':'Racer'});
+    window.savedArchiveName=board.entries[0].name;
+   });
+   await page.locator('details[data-event-kind] > summary').first().click();
+   assert.match(await page.locator('.sq-archive-winner').innerText(),/Newest Racer/);
+   assert.match(await page.locator('details[data-event-kind] > summary').getAttribute('aria-label'),/winner Newest Racer/);
+   assert.match(await page.locator('details[data-event-kind]').innerText(),/Newest Racer/);
+   assert.doesNotMatch(await page.locator('details[data-event-kind]').innerText(),/Old archive name/);
+   assert.equal(await page.evaluate(()=>window.savedArchiveName),'Old archive name');
    assert.deepEqual(errors,[]);await page.close();
   }
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

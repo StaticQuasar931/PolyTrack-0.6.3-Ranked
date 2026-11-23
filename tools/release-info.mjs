@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 475,
+  "number": 477,
   "version": "0.6.3",
-  "revision": 402,
+  "revision": 403,
   "notes": [
-    "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
+    "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
   ],
-  "preparedAt": "2026-11-23T00:23:34.941Z",
-  "committedAt": "2026-11-23T00:23:36.000Z"
+  "preparedAt": "2026-11-23T00:45:28.308Z",
+  "committedAt": "2026-11-23T00:45:30.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

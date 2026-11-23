@@ -1361,3 +1361,16 @@ test('a bot-published snapshot gets its own one-time notice without a client rel
   notice.resume();assert.equal(d.dialog,undefined);
   notice.dispose();
 });
+
+test('update offer animates again when it returns from gameplay, not on idle polls',async()=>{
+ let idle=true;
+ const h=harness({isIdle:()=>idle});
+ await h.handle.check();
+ const b=h.document.button;
+ assert.equal(b.animations.length,1);
+ idle=false;h.handle.resume();assert.equal(b.hidden,true);
+ idle=true;h.handle.resume();assert.equal(b.hidden,false);
+ assert.equal(b.animations.length,2);
+ h.handle.resume();assert.equal(b.animations.length,2);
+ h.handle.dispose();
+});

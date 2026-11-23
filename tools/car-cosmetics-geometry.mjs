@@ -95,9 +95,9 @@ export function carAttachmentFrames(positions,indices){
  for(let i=0;i+2<ix.length;i+=3){const p=[ix[i],ix[i+1],ix[i+2]].map(index=>{if(!Number.isInteger(index)||index<0||index*3+2>=positions.length)throw Error('Invalid native face');return Array.from(positions.slice(index*3,index*3+3));}),u=p[1].map((v,a)=>v-p[0][a]),v=p[2].map((v,a)=>v-p[0][a]),n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],area=Math.hypot(...n);if(area<1e-8)continue;faces.push({p,normal:n.map(v=>v/area),area,center:[0,1,2].map(a=>(p[0][a]+p[1][a]+p[2][a])/3)});}
  const frame=(axis,filter)=>{let selected=faces.filter(filter);if(!selected.length)throw Error('No safe native attachment surface');const top=Math.max(...selected.map(f=>f.center[axis]));selected=selected.filter(f=>f.center[axis]>=top-.015);const area=selected.reduce((n,f)=>n+f.area,0),point=[0,1,2].map(a=>selected.reduce((n,f)=>n+f.center[a]*f.area,0)/area),normal=[0,1,2].map(a=>selected.reduce((n,f)=>n+f.normal[a]*f.area,0)/area),length=Math.hypot(...normal);const vertices=selected.flatMap(f=>f.p);return Object.freeze({point,normal:normal.map(v=>v/length),width:Math.max(...vertices.map(p=>p[0]))-Math.min(...vertices.map(p=>p[0])),depth:Math.max(...vertices.map(p=>p[2]))-Math.min(...vertices.map(p=>p[2]))});};
  // Intersect triangles with the actual body centerline, independent of triangulation/face area.
- const centerX=(min[0]+max[0])/2,centerline=filter=>{
+ const centerX=(min[0]+max[0])/2,centerline=(filter,preferWide=false)=>{
   const candidates=[];for(const f of faces.filter(filter)){const cut=[];for(let i=0;i<3;i++){const a=f.p[i],b=f.p[(i+1)%3];if(Math.abs(a[0]-centerX)<1e-6)cut.push(a);if((a[0]-centerX)*(b[0]-centerX)<0){const t=(centerX-a[0])/(b[0]-a[0]);cut.push([centerX,a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])]);}}if(cut.length>=2){const lo=Math.min(...cut.map(p=>p[2])),hi=Math.max(...cut.map(p=>p[2]));if(hi-lo>1e-5){const z=(lo+hi)/2,y=f.p[0][1]-(f.normal[0]*(centerX-f.p[0][0])+f.normal[2]*(z-f.p[0][2]))/f.normal[1];candidates.push({f,lo,hi,y});}}}
-  if(!candidates.length)return null;candidates.sort((a,b)=>b.y-a.y);const best=candidates[0],coplanar=candidates.filter(c=>c.f.normal.reduce((n,x,i)=>n+x*best.f.normal[i],0)>.999&&Math.abs(c.f.p[0].reduce((n,x,i)=>n+(x-best.f.p[0][i])*best.f.normal[i],0))<.002),z=(Math.min(...coplanar.map(c=>c.lo))+Math.max(...coplanar.map(c=>c.hi)))/2,n=best.f.normal,y=best.f.p[0][1]-(n[0]*(centerX-best.f.p[0][0])+n[2]*(z-best.f.p[0][2]))/n[1],vertices=coplanar.flatMap(c=>c.f.p);
+  if(!candidates.length)return null;candidates.sort((a,b)=>(preferWide?b.f.area-a.f.area:0)||b.y-a.y);const best=candidates[0],coplanar=candidates.filter(c=>c.f.normal.reduce((n,x,i)=>n+x*best.f.normal[i],0)>.999&&Math.abs(c.f.p[0].reduce((n,x,i)=>n+(x-best.f.p[0][i])*best.f.normal[i],0))<.002),z=(Math.min(...coplanar.map(c=>c.lo))+Math.max(...coplanar.map(c=>c.hi)))/2,n=best.f.normal,y=best.f.p[0][1]-(n[0]*(centerX-best.f.p[0][0])+n[2]*(z-best.f.p[0][2]))/n[1],vertices=coplanar.flatMap(c=>c.f.p);
   return Object.freeze({point:[centerX,y,z],normal:[...n],width:Math.max(...vertices.map(p=>p[0]))-Math.min(...vertices.map(p=>p[0])),depth:Math.max(...coplanar.map(c=>c.hi))-Math.min(...coplanar.map(c=>c.lo))});
  };
  const roof=centerline(f=>f.normal[1]>.65&&f.center[1]>=min[1]+(max[1]-min[1])*.55);if(!roof)throw Error('No centered native roof surface');
@@ -107,7 +107,7 @@ export function carAttachmentFrames(positions,indices){
  const upper=f=>f.normal[1]>.80&&Math.abs(f.normal[0])<.15;
  const decalFrames={};
  for(const [id,surface] of [
-  ['mid-body',centerline(f=>upper(f)&&f.center[2]>roof.point[2]+lengthZ*.05&&f.center[2]<midZ+lengthZ*.12)],
+  ['mid-body',centerline(f=>f.normal[1]>.65&&Math.abs(f.normal[0])<.15&&f.center[2]>roof.point[2]+lengthZ*.05&&f.center[2]<midZ+lengthZ*.24,true)],
   ['rear-deck',centerline(f=>upper(f)&&f.center[2]<roof.point[2]-lengthZ*.09&&f.center[1]<roof.point[1]-.04)]
  ])if(surface&&surface.width>.05&&surface.depth>.05)decalFrames[id]=surface;
  for(const [id,axis,sign] of [['left',0,-1],['right',0,1],['front',2,1],['rear',2,-1],['under',1,-1]]){
