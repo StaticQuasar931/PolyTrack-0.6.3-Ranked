@@ -9,7 +9,11 @@ import {EVENT_COLLECTIONS} from './events.js';
 import {createEventFirestoreStore} from './events-store.js';
 import {handleCurrencyRequest} from './currency-wallet.js';
 import {createCommunityBadgeService, CommunityBadgeError} from './community-badge.js';
-import {mergeEarnedAndPurchasedEntitlements, purchasedProfileCosmeticsUnlocked, addCommunityBadge} from './purchased-cosmetic-entitlements.js';
+import {readWorkshopStyle,WORKSHOP_STYLE_COLLECTION} from '../../../tools/public-workshop-style.mjs';
+import {carEarnedRequirement,carSelectionAllowed,isFreeWorkshopChoice} from '../../../tools/car-cosmetics-catalog.mjs';
+import {createCarEquipPolicy} from '../../../tools/car-earned-policy.mjs';
+import {workshopStickerOffer} from '../../../tools/workshop-sticker-shop-catalog.mjs';
+import {readPurchasedCosmetics, mergeEarnedAndPurchasedEntitlements, purchasedProfileCosmeticsUnlocked, addCommunityBadge} from './purchased-cosmetic-entitlements.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
@@ -2405,6 +2409,40 @@ async function profileGroupCode(request, env, context, uid, body, readOnly = fal
   return json(origin, env, 200, {groupCode});
 }
 
+async function publishProfileWorkshop(request,env,uid,body){
+  const origin=request.headers.get('Origin')||'',accountId=body.accountId,workshopStyle=readWorkshopStyle(body.workshopStyle);
+  if(request.method!=='POST')return json(origin,env,405,{error:'method_not_allowed'});
+  if(typeof accountId!=='string'||!/^[a-f0-9]{64}$/.test(accountId)||workshopStyle===undefined)
+    return json(origin,env,400,{error:'invalid_workshop_style'});
+  const profile=await readDocument(env,COLLECTIONS.profiles,accountId);
+  if(profile?.data?.accountId!==accountId||profile.data.ownerUid!==uid)
+    return json(origin,env,403,{error:'profile_not_owned'});
+  const saved=await readDocument(env,WORKSHOP_STYLE_COLLECTION,accountId);
+  if((saved?.data?.workshopStyle??'')===workshopStyle)return json(origin,env,200,{accepted:true,workshopStyle,unchanged:true});
+  if(workshopStyle){
+    const selection=JSON.parse(workshopStyle);
+    const choices=Object.keys(selection).filter(category=>!['stickerLayout','extraSticker'].includes(category)).map(category=>({category,id:selection[category]}));
+    if(selection.extraSticker)choices.push({category:'sticker',id:selection.extraSticker.id});
+    const [overall,purchases]=await Promise.all([
+      choices.some(carEarnedRequirement)?readOverallSnapshot(env):null,
+      choices.some(workshopStickerOffer)?readDocument(env,ENTITLEMENT_COLLECTION,accountId):null
+    ]);
+    const row=overall?.data?.entries?.find(entry=>(entry.userId??entry.accountId)===accountId);
+    const owned=readPurchasedCosmetics(purchases?.data,{accountId,ownerUid:uid})?.items??{};
+    const policy=createCarEquipPolicy({getAccountId:()=>accountId,getPublishedProfile:()=>row,isFree:isFreeWorkshopChoice});
+    const allowed=choice=>{
+      const offer=workshopStickerOffer(choice);
+      return offer?Object.hasOwn(owned,offer.id):policy(choice);
+    };
+    const full={accessory:'none',finish:'original',emblem:'none',front:'none',rear:'none',sticker:'none',...selection};
+    if(!carSelectionAllowed(full,accountId,allowed))return json(origin,env,403,{error:'workshop_style_locked'});
+  }
+  const updatedAt=Math.max(Date.now(),(Number(saved?.data?.updatedAt)||0)+1);
+  try{await commitDocuments(env,[{collection:WORKSHOP_STYLE_COLLECTION,id:accountId,prior:saved,data:{workshopStyle,updatedAt}}]);}
+  catch(error){if(/^FIRESTORE_(409|412)$/.test(String(error?.message)))return json(origin,env,409,{error:'profile_changed'});throw error;}
+  return json(origin,env,200,{accepted:true,workshopStyle});
+}
+
 async function updateProfileCosmetics(request, env, context, uid, body) {
   const origin = request.headers.get('Origin') || '';
   const accountId = safeText(body.accountId, 128);
@@ -3140,7 +3178,7 @@ async function handleRequestInternal(request, env, context = {}) {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
-  if (path !== '/v1/profile/community-badge' && path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/profile/group-code' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
+  if (path !== '/v1/profile/community-badge' && path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/profile/workshop' && path !== '/v1/profile/group-code' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });
   const admission = await admitWriteBurst(request, env);
   if (admission === 'limited') return rateLimited(origin, env);
@@ -3189,6 +3227,7 @@ async function handleRequestInternal(request, env, context = {}) {
         {error: error instanceof CommunityBadgeError ? error.message : 'community_unavailable'});
     }
   }
+  if (path === '/v1/profile/workshop') return publishProfileWorkshop(request,env,uid,body);
   if (path === '/v1/profile/cosmetics') return updateProfileCosmetics(request, env, context, uid, body);
   if (path === '/v1/profile/group-code') return profileGroupCode(request, env, context, uid, body);
   if (path === '/v1/profile/notify') return notifyProfile(request, env, context, uid, body);

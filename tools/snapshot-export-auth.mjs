@@ -1,5 +1,7 @@
 import {createPrivateKey, sign} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
+import {workshopCaptureQuery} from './capture-workshop-styles.mjs';
+import {WORKSHOP_STYLE_COLLECTION} from './public-workshop-style.mjs';
 
 const OAUTH = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/datastore';
@@ -32,6 +34,16 @@ function validateRequest(url, options) {
   if (url.endsWith(':runQuery')) {
     const query = body?.structuredQuery;
     if (!Number.isSafeInteger(query?.limit) || query.limit < 1 || query.limit > 100) denied();
+    if(query.from?.[0]?.collectionId===WORKSHOP_STYLE_COLLECTION){
+      const start=query.startAt?.values;
+      const prefix=DOCUMENTS+WORKSHOP_STYLE_COLLECTION+'/';
+      const name=start?.[1]?.referenceValue;
+      if(query.startAt!==undefined&&!name?.startsWith(prefix))denied();
+      let expected;
+      try{expected=workshopCaptureQuery(name?{id:name.slice(prefix.length),at:Number(start[0]?.integerValue)}:null,query.limit);}catch{denied();}
+      if(!isDeepStrictEqual(body,expected))denied();
+      return;
+    }
     const expected = {structuredQuery: {from: [{collectionId: '0.6.2_profiles_public'}],
       select: {fields: PROFILE_FIELDS.map(fieldPath => ({fieldPath}))},
       orderBy: [{field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: query.limit}};

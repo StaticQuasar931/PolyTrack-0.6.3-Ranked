@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {readWorkshopStyle} from './public-workshop-style.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {fileURLToPath} from 'node:url';
 import {encodeRacerDirectory} from './racer-directory-codec.mjs';
@@ -14,6 +15,7 @@ export async function buildProfileSnapshotResults(directory){
   const racers=new Map();
   const overall=await optional(path.join(directory,'overall.json'));
   const manifest=await optional(path.join(directory,'manifest.json'));
+  const workshopStyles=(await optional(path.join(directory,'workshop-styles.json')))?.entries||{};
   const summary=await optional(path.join(directory,'public-export-summary.json'));
   const published=new Map((overall?.entries||[]).map(row=>[row.userId||row.accountId,row]));
   const identities=new Map();
@@ -96,13 +98,20 @@ export async function buildProfileSnapshotResults(directory){
     }
     const eligible=finishes.filter(row=>row.runVerified===true&&row.integrityVerified===true&&row.fieldSize>=2);
     const metric=(key,fallback=0)=>{const value=Number(publicStatus?.[key]??publicProfile?.[key]??fallback);return Number.isSafeInteger(value)&&value>=0?value:0;};
-    const cosmeticContext={rank:metric('rank'),raceCount:metric('raceCount',eligible.length),
+    const cosmeticContext={rank:publicStatus?.provisional===true?0:metric('rank'),raceCount:metric('raceCount',eligible.length),
       pbCount:metric('pbCount'),totalPlaytimeMs:metric('totalPlaytimeMs'),
       extraCount:metric('extraCount',eligible.filter(row=>extraIds.has(row.trackId)).length),
       trackWins:metric('trackWins',eligible.filter(row=>row.rank===1&&row.fieldSize>=5).length),
       ...((publicStatus?.badges??publicProfile?.badges)?.betaTester===true?{badges:{betaTester:true}}:{}),
       ...(Array.isArray(publicStatus?.cosmeticUnlocks??publicProfile?.cosmeticUnlocks)?{cosmeticUnlocks:(publicStatus?.cosmeticUnlocks??publicProfile?.cosmeticUnlocks).filter(id=>typeof id==='string'&&/^[A-Za-z][A-Za-z0-9_-]{0,63}:[A-Za-z0-9_-]{1,64}$/.test(id)).slice(0,32)}:{})};
-    if(identity)identities.set(accountId,{...identity,cosmeticContext});
+    // This value comes only from the captured profile, never a PB or archived event.
+    const workshopStyle=readWorkshopStyle(workshopStyles[accountId]);
+    if(publicProfile){
+      delete publicProfile.workshopStyle;
+      if(workshopStyle)publicProfile.workshopStyle=workshopStyle;
+    }
+    if(workshopStyle&&publicStatus?.medals)cosmeticContext.medals=Object.fromEntries(['gold','silver','bronze'].filter(t=>Number.isSafeInteger(publicStatus.medals[t])&&publicStatus.medals[t]>0).map(t=>[t,publicStatus.medals[t]]));
+    if(identity)identities.set(accountId,{...identity,cosmeticContext,...(workshopStyle?{workshopStyle}: {})});
     const value={accountId,updatedAt:Math.max(Number(overall?.updatedAt)||0,...finishes.map(row=>Number(row.cachedAt)||0)),
       capturedAt:summary?.capturedAt||null,results:finishes,expectedEligibleTracks:Number(published.get(accountId)?.raceCount)||0,
       coverage:{boardsPresent:boards,boardsKnown:Number(manifest?.trackIdsKnown)||boards,allTracksCaptured:boards>=Number(manifest?.trackIdsKnown||Infinity)},

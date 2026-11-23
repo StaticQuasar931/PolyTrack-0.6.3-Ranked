@@ -1,6 +1,6 @@
-const {workshopStickerOffer}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+import {workshopStickerOffer} from './workshop-sticker-shop-catalog.mjs?v=workshop-shared-1';
 
-const {OWNER_CHALLENGE_WORKSHOP_REWARDS,confirmedOwnerChallengeCount}=await import(new URL('./achievement-recommendations.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+import {OWNER_CHALLENGE_WORKSHOP_REWARDS,confirmedOwnerChallengeCount} from './achievement-recommendations.mjs?v=workshop-shared-1';
 
 /** Local visual eligibility from owner-scoped Shop UI state or published earned progress. */
 export function createCarEquipPolicy({getAccountId,getPublishedProfile,getPublishedRank,isFree,ownsForUi}={}){

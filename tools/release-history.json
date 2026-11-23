@@ -1,15 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 479,
+    "number": 480,
     "version": "0.6.3",
-    "revision": 405,
+    "revision": 406,
     "notes": [
-      "Fixed Achievements and the Style Shop not opening after an update.",
-      "Paid styles in Racer Studio now open their exact Shop listing. The live preview leaves more room for your racer details."
+      "Save your Workshop setup to show it on your car in Ranked Racers and racer profiles after the next snapshot."
     ]
   },
   "entries": [
+    {
+      "number": 479,
+      "title": "Fix Achievements and Style Shop loading",
+      "commit": "b28723eb581f74f07378e41e21e6b2cb6f1d7eab",
+      "committedAt": "2026-11-23T01:09:50.000Z",
+      "notes": [
+        "Fixed Achievements and the Style Shop not opening after an update.",
+        "Paid styles in Racer Studio now open their exact Shop listing. The live preview leaves more room for your racer details."
+      ]
+    },
     {
       "number": 478,
       "title": "Expand achievements and the Style Shop",
@@ -174,15 +183,6 @@
       "committedAt": "2026-11-22T20:12:13.000Z",
       "notes": [
         "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
-      ]
-    },
-    {
-      "number": 455,
-      "title": "Preserve newer canonical leaderboard coverage",
-      "commit": "c9652de45c8d9fbf374ae4ab3f43b9973b9f5717",
-      "committedAt": "2026-11-22T20:03:28.000Z",
-      "notes": [
-        "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
       ]
     }
   ],

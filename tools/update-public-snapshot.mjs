@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { decodeSnapshot, publishSnapshot, MAX_DECODED_BYTES } from './snapshot-package.mjs';
 import { PUBLIC_SNAPSHOT_LIMITS, runPublicSnapshotBackup } from './public-snapshot-backup.mjs';
 import { PublicBackupDeferredError } from './public-backup-fetch.mjs';
+import {captureWorkshopStyles} from './capture-workshop-styles.mjs';
 import { exportPublicProfilesAndReplays } from './public-profile-replay-export.mjs';
 import { createSnapshotExportFetch } from './snapshot-export-auth.mjs';
 import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
@@ -617,6 +618,17 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       if (totalsResult?.deferred !== false) throw new Error('Invalid public event totals capture outcome');
     }
   }
+  // Only scheduled/explicit GitHub capture reads changed Workshop saves. Offline
+  // publication and local full captures retain the last captured Workshop directory.
+  if(!offline&&capture===runPublicSnapshotBackup&&env.FIREBASE_VERIFIER_SERVICE_ACCOUNT){
+    try{
+      const workshop=await captureWorkshopStyles(stagingDirectory,createSnapshotExportFetch({...exportAuth,serviceAccount:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,fetchImpl:exportFetch}));
+      log(JSON.stringify({workshopCapture:workshop}));
+    }catch{
+      log('Workshop changes could not be captured; retaining the previous Workshop directory.');
+    }
+  }
+
   // Offline packaging never issues credentials or live reads, even with refresh flags.
   if (!offline && (fullPublic || refreshReplays)) {
     const previousProgress = await readJsonIfPresent(path.join(stagingDirectory, 'export-progress.json'));

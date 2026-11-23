@@ -118,13 +118,20 @@ const workshopGlyphs={
 };
 export function workshopOptionArt(category,id,number){const shape=id==='none'?'<path d="M8 8l16 16M24 8L8 24"/>':category==='sticker'?carStickerIcon(id,number):workshopGlyphs[id]||'';
  return '<svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round" stroke-linecap="round">'+shape+'</svg>';}
-export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low',canEquip,onAppearance}={}){
+export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low',canEquip,onAppearance,onSaved}={}){
  if(!window?.document||typeof getAccountId!=='function')throw TypeError('Native car host required');if(window.__polytrackCarCosmetics)return window.__polytrackCarCosmetics;
  const document=window.document,garages=new Map(),cars=new Map();let disposed=false,requestedUntil=0,policy=canEquip,storage;try{storage=window.localStorage;}catch{}
  const safe=fn=>{try{return fn();}catch{return null;}},density=()=>['medium','high'].includes(safe(getDensity))?safe(getDensity):'low';
  const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./car-cosmetics.css'+new URL(import.meta.url).search,import.meta.url).href;document.head.append(link);
  function close(owner){const s=garages.get(owner);if(!s)return;garages.delete(owner);s.dead=true;s.epoch++;s.observer.disconnect();s.layoutCleanup?.();s.controller.dispose();s.camera.reset();s.nativeTab?.classList.add('selected');s.cap.root.classList.remove('car-workshop-active');s.launcher.remove();s.panel.remove();}
- function persistSelection(s){const value=mergeCarVisualPreferences(readCarCosmetic(storage,s.accountId),s.selection,s.touchedKeys);const saved=saveCarVisuals(storage,s.accountId,value);if(saved)s.touchedKeys.clear();return saved;}
+ function persistSelection(s){const value=mergeCarVisualPreferences(readCarCosmetic(storage,s.accountId),s.selection,s.touchedKeys);const saved=saveCarVisuals(storage,s.accountId,value);if(saved){
+   s.touchedKeys.clear();
+   if(typeof onSaved==='function'){
+    const save=(s.publishAttempt||0)+1;s.publishAttempt=save;
+    const update=shared=>{if(!s.dead&&s.publishAttempt===save)s.status.textContent=shared?'Workshop saved. Shared after the next snapshot.':'Workshop saved on this device. Save again when online to share.';};
+    Promise.resolve().then(()=>onSaved(s.accountId,value)).then(update,()=>update(false));
+   }
+  }return saved;}
  function updateSavedState(s){const dirty=JSON.stringify(normalizeCarSelection(s.selection))!==JSON.stringify(normalizeCarSelection(s.savedSelection));s.panel.dataset.dirty=String(dirty);s.panel.querySelector('[data-save-state]').textContent=dirty?'Unsaved workshop style':'Saved on this device';return dirty;}
  function stickerDraft(s){
   if(!s.secondSticker)return {id:s.selection.sticker,layout:normalizeStickerLayout(s.selection.stickerLayout)};
