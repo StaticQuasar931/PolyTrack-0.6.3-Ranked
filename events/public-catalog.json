@@ -45,6 +45,24 @@
   ],
   "archives": [
     {
+      "id": "kodub_1795377600000",
+      "trackId": "99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37",
+      "kind": "kodub",
+      "startsAt": 1794772800000,
+      "endsAt": 1795377600000,
+      "graceMs": 86400000,
+      "maxRp": 700,
+      "label": "Event 2026-11-15",
+      "author": "dice🌹, Kaiser-Burn",
+      "trackName": "Uplink⛐Error",
+      "entrantLimit": 2000,
+      "targetMs": 23188,
+      "targetPolicy": "official-fastest-verified-at-import",
+      "scoringVersion": "time-gap-v2",
+      "racerCount": 4,
+      "archived": true
+    },
+    {
       "id": "d_20261120",
       "trackId": "27429a1d1bf05770851e3919af70f47c6cd7a269c67032b084fb4345f6c271ce",
       "startsAt": 1795132800000,

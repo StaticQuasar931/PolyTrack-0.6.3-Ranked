@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 473,
+    "number": 475,
     "version": "0.6.3",
-    "revision": 401,
+    "revision": 402,
     "notes": [
-      "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
+      "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
     ]
   },
   "entries": [
+    {
+      "number": 473,
+      "title": "Keep event results when name filters change",
+      "commit": "606c79a50b0bf8a48a05bea0cd13577a90b49cd5",
+      "committedAt": "2026-11-22T23:53:21.000Z",
+      "notes": [
+        "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
+      ]
+    },
     {
       "number": 472,
       "title": "Group Beat the Owner under Style",
@@ -177,17 +186,6 @@ const historyData = {
         "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
         "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
         "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
-      ]
-    },
-    {
-      "number": 451,
-      "title": "Add Total RP plates and six Workshop styles",
-      "commit": "7161a7781a4cd2cdd6cb1699c8d528d4059ab803",
-      "committedAt": "2026-11-22T04:25:16.000Z",
-      "notes": [
-        "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
-        "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
-        "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
       ]
     }
   ],
