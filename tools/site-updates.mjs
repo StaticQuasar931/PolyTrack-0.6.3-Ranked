@@ -540,7 +540,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
 
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
-  let compatibility = null, pendingManifest = null, latestManifest = null;
+  let compatibility = null, pendingManifest = null, latestManifest = null, offerMotion = null;
   const loadedSnapshotGeneration=installedSnapshotGeneration(document);
   let latestSnapshotGeneration=null;
   const snapshotUpdate=()=>latestManifest?.revision===revision && loadedSnapshotGeneration!==null && latestSnapshotGeneration>loadedSnapshotGeneration;
@@ -765,12 +765,29 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     }
     publish(state);
   };
+  const animateOffer = () => {
+    try {
+      if (document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+      offerMotion?.cancel?.();
+      offerMotion = button?.animate?.([
+        {opacity:0,transform:'translateY(16px) scale(.91)'},
+        {opacity:1,transform:'translateY(-4px) scale(1.045)',offset:.55},
+        {opacity:1,transform:'none'}
+      ],{duration:540,easing:'ease-out'});
+    } catch { /* The update remains available without motion. */ }
+  };
   const resume = () => {
     // The parent owns run/editor state. Recheck it on every transition, not just
     // when a new manifest arrives, so an existing offer cannot follow a live run.
     try {
       const safe = !!document.body && isVisible(document) && isIdle(document);
-      if (button) { button.hidden = !safe || suppressReminder(); button.style.display = button.hidden ? 'none' : 'inline-block'; }
+      if (button) {
+        const wasHidden=button.hidden;
+        button.hidden = !safe || suppressReminder();
+        button.style.display = button.hidden ? 'none' : 'inline-block';
+        if(!wasHidden&&button.hidden)offerMotion?.cancel?.();
+        if(wasHidden&&!button.hidden)animateOffer();
+      }
       if (!safe || suppressReminder() || criticalUpdate()) dismissalMenu?.close();
       if (!safe) {
         clearOldCopyNotice();
@@ -822,15 +839,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
-      try {
-        if (!document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
-          button.animate?.([
-            {opacity:0, transform:'translateY(8px) scale(.97)'},
-            {opacity:1, transform:'translateY(-2px) scale(1.025)', offset:.72},
-            {opacity:1, transform:'none'}
-          ], {duration:380, easing:'ease-out'});
-        }
-      } catch { /* The update remains available without animation. */ }
+      animateOffer();
       dismissalMenu = bindUpdateDismissal({document,button,preference:reminder,enabled:()=>!criticalUpdate(),
         onDismiss:()=>{explicitOffer=false; button.hidden=true; button.style.display='none'; clearOldCopyNotice();
           const body=document.body, prior=body.getAttribute?.('tabindex'); body.setAttribute('tabindex','-1'); body.focus?.();

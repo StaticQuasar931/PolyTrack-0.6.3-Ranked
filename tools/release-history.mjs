@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 475,
+    "number": 477,
     "version": "0.6.3",
-    "revision": 402,
+    "revision": 403,
     "notes": [
-      "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
+      "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
     ]
   },
   "entries": [
+    {
+      "number": 475,
+      "title": "Restore the latest past weekly event",
+      "commit": "22113ec1b545dea539b7a72c8fb92123c0b8bcf1",
+      "committedAt": "2026-11-23T00:23:36.000Z",
+      "notes": [
+        "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
+      ]
+    },
     {
       "number": 473,
       "title": "Keep event results when name filters change",
@@ -175,17 +184,6 @@ const historyData = {
       "notes": [
         "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
         "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
-      ]
-    },
-    {
-      "number": 452,
-      "title": "Add verified Owner Challenge targets and rewards",
-      "commit": "4663f7ab8b75e33626a604a1411925323c831ed7",
-      "committedAt": "2026-11-22T04:43:38.000Z",
-      "notes": [
-        "Owner Challenge has four milestones, with new Workshop rewards at two and five verified tracks.",
-        "Open an unfinished Owner Challenge goal for verified rival times and shortcuts to eligible track previews.",
-        "Achievements separate earned cosmetic unlocks from Style Coins and keep completed milestones out of Next goals."
       ]
     }
   ],

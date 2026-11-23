@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=402';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=402';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=403';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=403';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=402';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=402';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=402';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=403';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=403';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=403';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -972,7 +972,7 @@ export function installEvents(bridge){
     }
     return local;
   };
-  const displayName=row=>bridge.displayName?.(row.accountId,row.name,Number(row.identityUpdatedAt)||0)||row.name||'Racer';
+  const displayName=row=>typeof bridge.displayName==='function'?(bridge.displayName(row.accountId||row.userId,row.name,Number(row.identityUpdatedAt)||0)||'Racer'):row.name||'Racer';
   const reset=eventResetLabel;
   function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(value.periods,catalogAt);
     refreshOpenKodubCard();
@@ -1334,7 +1334,7 @@ export function installEvents(bridge){
       await bridge.prepareArchive?.();if(!dialog||token!==requestId)return;
       body('');
       mountArchiveView(dialog.querySelector('main'),{periods,month,formatTime:time,accountId:bridge.accountId(),snapshots:cache,
-        resolveName:periodName,loadSnapshot:period=>snapshot(period,false),
+        resolveName:periodName,resolveRacerName:displayName,loadSnapshot:period=>snapshot(period,false),
         onOpenPeriod:(period,snapshot)=>void openArchivedTrack(period,snapshot),onImportPeriod:period=>void importArchived(period),renderThumbnail:period=>{const node=document.createElement('span');node.innerHTML=bridge.thumbnail(period.trackId);return node;}});
       dialog.__sqArchiveReplayLabels=observeArchiveReplayLabels(dialog.querySelector('main'),periods,cache);
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}

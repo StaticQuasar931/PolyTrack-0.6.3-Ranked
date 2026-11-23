@@ -125,3 +125,7 @@ html body #overallProfilePopup .profile-podium-wide .profile-medal-card--single[
 
 .profile-podium-details{max-block-size:min(430px,65dvh)}
 .profile-podium-details[data-result-count="1"]{inline-size:min(420px,calc(100% - 24px))}
+
+.profile-identity-chips{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%;vertical-align:middle}
+.profile-identity-chips:empty{display:none}
+.profile-identity-chips>:is(.profile-badge,.profile-racer-title,.profile-favorite-chip){display:inline-flex;align-items:center;min-height:40px;max-width:100%;box-sizing:border-box;padding:4px 9px;font-size:13px;line-height:1.3;letter-spacing:.3px;clip-path:none;white-space:normal}
