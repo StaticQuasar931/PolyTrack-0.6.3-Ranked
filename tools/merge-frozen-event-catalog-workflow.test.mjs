@@ -115,3 +115,12 @@ test('catalog wrapper reports deferral explicitly and snapshot CLI uses the same
  for(const name of ['Capture public event assignments',capture,'Commit changed assignments'])
   assert.doesNotMatch(step(name),/continue-on-error/);
 });
+
+test('ended saved boards remain findable during grace without marking board standings final',async()=>{
+ const {mergeFrozenEventCatalog}=await import('./merge-frozen-event-catalog.mjs');
+ const period={id:'kodub_2000',kind:'kodub',trackId:'a'.repeat(64),startsAt:1000,endsAt:2000};
+ const board={id:period.id,archived:false,entries:[],period};
+ assert.equal(mergeFrozenEventCatalog({periods:[],archives:[]},[board],null,1999).archives.length,0);
+ assert.equal(mergeFrozenEventCatalog({periods:[],archives:[]},[board],null,2000).archives[0].id,period.id);
+ assert.equal(board.archived,false);
+});

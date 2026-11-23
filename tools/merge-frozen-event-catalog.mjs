@@ -11,7 +11,7 @@ function valid(period){
 function publicPeriod(period){
   return Object.fromEntries(fields.filter(key=>typeof period[key]==='string'?period[key].length<=256:Number.isFinite(period[key])).map(key=>[key,period[key]]));
 }
-export function mergeFrozenEventCatalog(catalog,boards,previousCatalog=null){
+export function mergeFrozenEventCatalog(catalog,boards,previousCatalog=null,now=Date.now()){
   if(!Array.isArray(catalog?.periods)||!Array.isArray(catalog.archives))throw Error('Invalid event catalog');
   if(previousCatalog && (!Array.isArray(previousCatalog.periods)||!Array.isArray(previousCatalog.archives)||previousCatalog.archives.length>5000))
     throw Error('Invalid saved event catalog');
@@ -20,7 +20,9 @@ export function mergeFrozenEventCatalog(catalog,boards,previousCatalog=null){
   for(const period of catalog.archives.filter(valid))archives.set(period.id,period);
   for(const board of boards){
     const period=board?.period;
-    if(board?.archived!==true||!Array.isArray(board.entries)||!valid(period)||board.id&&board.id!==period.id)continue;
+    // Ended published boards stay discoverable during grace. The board itself
+    // still controls whether the UI can label its standings final.
+    if(!Array.isArray(board?.entries)||!valid(period)||board.id&&board.id!==period.id||board.archived!==true&&period.endsAt>now)continue;
     archives.set(period.id,{...archives.get(period.id),...publicPeriod(period),archived:true});
   }
   if(archives.size>5000)throw Error('Archive catalog exceeds bounded history capacity');

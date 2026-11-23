@@ -44,6 +44,8 @@ const mustBlock = [
   'ngga',
   'n.g.g.a',
   'Racer nga',
+  'jew head','NRI99A','Bigredgooner','CallumGunnisalittlejew12','Bitnibba69','HitL34R','goooooooneerrrrrrrrr','the cumminning','Kirkumsized Penix','MasonisaNEEGY','JenniCoochie',
+  'LapTopNi','Big black monkey','GeeCrackHead','Bros such a digger','ratbastard','nigeon pex','jewers','throbnRobin','Blacky','DEEZ_NUTS','ialsocolectfigs','CHUDDDDD',
   'NGA123',
   'Nixxer',
   'NixxerRacer',
@@ -61,6 +63,7 @@ const mustAllow = [
   // Ordinary political vocabulary and neutral identity/nationality names.
   'Tonga',
   'MangaRacer',
+  'Putan','pooped on','ChudBen',
   'Angga',
   'Nigerian Racer',
   'NigerianRacer',

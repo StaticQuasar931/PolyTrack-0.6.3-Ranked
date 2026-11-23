@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 473,
+  "number": 475,
   "version": "0.6.3",
-  "revision": 401,
+  "revision": 402,
   "notes": [
-    "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
+    "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
   ],
-  "preparedAt": "2026-11-22T23:53:19.691Z",
-  "committedAt": "2026-11-22T23:53:21.000Z"
+  "preparedAt": "2026-11-23T00:23:34.941Z",
+  "committedAt": "2026-11-23T00:23:36.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
