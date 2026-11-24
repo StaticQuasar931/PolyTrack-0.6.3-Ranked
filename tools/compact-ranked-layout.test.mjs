@@ -27,7 +27,12 @@ test('dynamic ranking scope controls enter the mobile drawer and restore their o
   await page.evaluate(async text=>{const module=await import('data:text/javascript,'+encodeURIComponent(text));window.dispose=module.installCompactRankedLayout({document,window});},source);
   await page.evaluate(()=>document.querySelector('.overall-center-tools').insertAdjacentHTML('beforeend','<div id="overallRankingScope" class="overall-track-scope"><button>Total</button><button>Official only</button></div>'));
   await page.waitForFunction(()=>document.querySelector('#overallRankingScope').parentElement.id==='overallMobileTools');
-  await page.locator('.overall-mobile-tools').click();
+  const tools=page.getByRole('button',{name:'More ranking tools'});
+  await tools.evaluate(button=>button.focus());
+  assert.equal(await tools.getAttribute('aria-description'),'Track filters, snapshot status, quick rankings, and challenges');
+  assert.equal(await tools.getAttribute('aria-expanded'),'false');
+  await tools.press('Enter');
+  assert.equal(await tools.getAttribute('aria-expanded'),'true');
   assert.equal(await page.locator('#overallRankingScope').isVisible(),true);
   await page.evaluate(()=>document.querySelector('#overallRankingScope').outerHTML='<div id="overallRankingScope" class="overall-track-scope"><button>New scope</button></div>');
   await page.waitForFunction(()=>document.querySelector('#overallRankingScope').parentElement.id==='overallMobileTools');

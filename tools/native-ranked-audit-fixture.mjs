@@ -1,6 +1,8 @@
 import {readFile} from 'node:fs/promises';
 import {RELEASE_INFO} from './release-info.mjs';
 const {revision}=JSON.parse(await readFile(new URL('../site-version.json',import.meta.url),'utf8'));
+const {currentdir}=JSON.parse(await readFile(new URL('../snapshot-current.json',import.meta.url),'utf8'));
+const installedGeneration=/^public-snapshots([1-9]\d*)$/.exec(currentdir)?.[1];
 const FIREBASE_COMPAT_SDK = /^https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.2\/firebase-(?:app|auth|firestore)-compat\.js$/;
 
 const FIREBASE_AUDIT_BOOTSTRAP = `(() => {
@@ -66,11 +68,12 @@ export async function installNativeRankedAuditFixture(page, {rejectWrites = fals
   }));
   await page.addInitScript({ content: `window.__ptNativeRankedAuditRejectWrites = ${Boolean(rejectWrites)};\n` + FIREBASE_AUDIT_BOOTSTRAP });
   // Unrelated UI audits start after acknowledgement; notice tests explicitly opt out.
-  if(acknowledgeInstalledRevision)await page.addInitScript(({revision,releaseNumber})=>{
+  if(acknowledgeInstalledRevision)await page.addInitScript(({revision,releaseNumber,snapshotGeneration})=>{
     // Current notices are release-keyed; older clients use the revision fallback.
     localStorage.setItem(`polytrack-site-update-ack-release-v1:${releaseNumber}`,'acknowledged');
     localStorage.setItem(`polytrack-site-update-ack-v1:${revision}`,'acknowledged');
-  },{revision,releaseNumber:RELEASE_INFO.number});
+    if(snapshotGeneration)localStorage.setItem(`polytrack-site-update-ack-snapshot-v1:${snapshotGeneration}`,'acknowledged');
+  },{revision,releaseNumber:RELEASE_INFO.number,snapshotGeneration:installedGeneration});
 }
 
 async function clickNativeMenuButton(page, label, timeout) {

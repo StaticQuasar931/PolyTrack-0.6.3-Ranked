@@ -3,7 +3,7 @@ import path from 'node:path';
 import http from 'node:http';
 import vm from 'node:vm';
 import {fileURLToPath} from 'node:url';
-import {execFileSync} from 'node:child_process';
+import {execFile,execFileSync} from 'node:child_process';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const mime={'.html':'text/html','.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.webp':'image/webp','.svg':'image/svg+xml','.woff2':'font/woff2','.wasm':'application/wasm','.bin':'application/octet-stream'};
 
@@ -11,6 +11,8 @@ const mime={'.html':'text/html','.mjs':'text/javascript','.js':'text/javascript'
 export async function startResponsiveServer({baseline=false}={}){
   const baselineFiles=new Set(['index.html','home-ui.css','polytrack_062_patch.js','events/client.mjs','events/events.css','tools/practice-profile.mjs','extra-tracks/catalog-ui.mjs','extra-tracks/catalog.css']);
   const prior=new Map();
+  const generation=JSON.parse(fs.readFileSync(path.join(root,'snapshot-current.json'),'utf8')).currentdir;
+  const sparseGeneration=/^public-snapshots[1-9]\d*$/.test(generation)&&!fs.existsSync(path.join(root,generation,'index.json'))?generation:null;
   const readText=relative=>{
     if(!baseline||!baselineFiles.has(relative))return fs.readFileSync(path.join(root,relative),'utf8');
     if(!prior.has(relative))prior.set(relative,execFileSync('git',['show','HEAD:'+relative],{cwd:root,encoding:'utf8',maxBuffer:20*1024*1024}));
@@ -32,6 +34,13 @@ export async function startResponsiveServer({baseline=false}={}){
       res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');
       const relative=path.relative(root,file).replaceAll(path.sep,'/');
       if(baseline&&baselineFiles.has(relative))return res.end(readText(relative));
+      // Keep the audit offline even in a sparse checkout without materialized snapshots.
+      const name=relative.startsWith(sparseGeneration+'/')?relative.slice(sparseGeneration.length+1):'';
+      if(sparseGeneration&&(/^(?:index\.json|[a-f0-9]{64}\.bin)$/.test(name)||/^[a-z0-9-]+\.json$/.test(name))){
+        return execFile('git',['cat-file','blob','HEAD:'+relative],{cwd:root,encoding:'buffer',maxBuffer:20*1024*1024},(error,bytes)=>{
+          if(error){res.writeHead(404);res.end();}else res.end(bytes);
+        });
+      }
       fs.createReadStream(file).on('error',()=>{if(!res.headersSent)res.writeHead(404);res.end();}).pipe(res);
     }catch{res.writeHead(500);res.end('Offline audit resource unavailable');}
   });

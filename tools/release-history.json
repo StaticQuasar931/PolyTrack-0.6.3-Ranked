@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 483,
+    "number": 484,
     "version": "0.6.3",
-    "revision": 408,
+    "revision": 409,
     "notes": [
-      "Improved Summer One replay verification so it can update without changing other event standings."
+      "Rankings show more rows in landscape. The More button on compact rankings now explains what it opens to screen readers.",
+      "Track previews can warm again after a temporary failure, without hammering the connection."
     ]
   },
   "entries": [
+    {
+      "number": 483,
+      "title": "Preserve event standings during normal replay verification",
+      "commit": "f417384c5cd3a45512d803a5ce78659ae21a425e",
+      "committedAt": "2026-11-24T05:14:39.000Z",
+      "notes": [
+        "Improved Summer One replay verification so it can update without changing other event standings."
+      ]
+    },
     {
       "number": 481,
       "title": "Show your saved Workshop styles immediately",
@@ -175,13 +185,6 @@
       "title": "Omit invalidated boards from routine snapshot publication",
       "commit": "be70049f3cc9015d37d039a4ca5e422e0e5e6106",
       "committedAt": "2026-11-22T20:59:24.000Z",
-      "notes": []
-    },
-    {
-      "number": null,
-      "title": "Defer changed recordings without blocking snapshot capture",
-      "commit": "12635079b96deee2611598acac81d6a39e63df41",
-      "committedAt": "2026-11-22T20:48:11.000Z",
       "notes": []
     }
   ],

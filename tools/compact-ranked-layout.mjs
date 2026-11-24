@@ -14,6 +14,7 @@ export function installCompactRankedLayout({document=globalThis.document,window=
     toggle.type='button';toggle.className='overall-mobile-tools';toggle.textContent='More';toggle.hidden=true;
     toggle.setAttribute('aria-controls',drawer.id);toggle.setAttribute('aria-expanded','false');
     toggle.setAttribute('aria-label','More ranking tools');
+    toggle.setAttribute('aria-description','Track filters, snapshot status, quick rankings, and challenges');
     const moved=[];
     function syncMoved(){
       for(const node of footer.querySelectorAll('.overall-challenge-stack,.overall-field-summary,.overall-freshness,.leaderboard-arcade,.overall-track-scope')){
