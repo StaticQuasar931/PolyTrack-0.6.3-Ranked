@@ -17,10 +17,13 @@ test('profile sorting keeps existing controls and previews; dialog focus respect
   try{
     const page=await browser.newPage({viewport:{width:1024,height:768}});
     await page.route('**/*',route=>route.abort());
-    await page.setContent('<button id="opener">Racer</button><div id="overallProfilePopup" style="display:none"><article class="overall-profile-card"><header class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button overall-action-btn">Close</button></header><div id="overallProfileContent"><details class="profile-customizer" open><summary>Racer Studio</summary><input id="draft" value="Unsaved favorite"></details><details class="profile-more-stats" open><summary>More profile stats</summary>Stats</details><section class="profile-track-history"><header><h4>Loaded results</h4></header><div class="profile-track-head">'+['track','weight','place','time'].map(key=>'<button data-profile-sort="'+key+'">'+key+'</button>').join('')+'</div><div class="profile-track-list"></div></section><div style="height:400px"></div></div></article></div>');
+    await page.setContent('<button id="opener">Racer</button><div id="overallProfilePopup" style="display:none"><article class="overall-profile-card"><header class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button overall-action-btn">Close</button></header><div id="overallProfileContent"><details class="profile-customizer" open><summary>Racer Studio</summary><input id="draft" value="Unsaved favorite"></details><details class="profile-more-stats" open><summary>More profile stats</summary>Stats</details><section class="profile-track-history"><header><h4>Loaded results</h4><button class="profile-track-percent-sort" data-profile-sort="percent">Top %</button></header><div class="profile-track-head">'+['track','weight','place','time'].map(key=>'<button data-profile-sort="'+key+'">'+key+'</button>').join('')+'</div><div class="profile-track-list"></div></section><div style="height:400px"></div></div></article></div>');
     await page.addStyleTag({content:fontCss+css});await page.evaluate(()=>document.fonts.ready);
     await page.evaluate(()=>{
       window.profileSort='place';window.profileSortDirection=1;window.overallDialogReturnFocus=null;
+      window.profileCleanup={podium:0,community:0};
+      window.closeProfilePodiumDetails=()=>window.profileCleanup.podium++;
+      window.cleanupCommunityBadgeViews=()=>window.profileCleanup.community++;
       window.knownFinishWeight=row=>row.weight;
       window.trackInfo=id=>({name:({a:'Alpine Long Track',b:'Bayside',c:'Canyon'})[id]});
       window.isElementVisible=node=>!!node?.getClientRects().length&&getComputedStyle(node).display!=='none';
@@ -44,7 +47,7 @@ test('profile sorting keeps existing controls and previews; dialog focus respect
     await page.evaluate(()=>openRankedDialog(document.querySelector('#overallProfilePopup'),document.querySelector('#overallProfileClose')));
     assert.equal(await page.evaluate(()=>frames.length),0,'refreshing an open dialog must not schedule another focus reset');
     assert.equal(await page.evaluate(()=>document.activeElement.id),'draft');
-    for(const [key,expected] of [['time',['a','b','c']],['time',['b','a','c']],['weight',['b','a','c']],['track',['a','b','c']]]){
+    for(const [key,expected] of [['time',['a','b','c']],['time',['b','a','c']],['weight',['b','a','c']],['place',['b','a','c']],['percent',['a','b','c']],['percent',['b','a','c']],['track',['a','b','c']]]){
       await page.locator('[data-profile-sort="'+key+'"]').click();
       assert.deepEqual(await page.locator('.profile-track-row').evaluateAll(nodes=>nodes.map(node=>node.dataset.trackId)),expected);
       assert.equal(await page.locator('[data-profile-sort="'+key+'"]').getAttribute('aria-pressed'),'true');
@@ -55,12 +58,17 @@ test('profile sorting keeps existing controls and previews; dialog focus respect
       assert.equal(await page.evaluate(()=>originalNodes.every(node=>document.querySelector('[data-track-id="'+node.dataset.trackId+'"]')===node)),true,'reuse row and thumbnail nodes');
     }
     await page.locator('[data-track-id="a"]').click();assert.equal(await page.evaluate(()=>clicks),1,'existing row listeners survive');
-    for(const [width,height] of [[320,568],[390,844],[844,390],[768,1024],[900,700],[1000,768],[1920,1080],[384,216]]){
+    for(const [width,height] of [
+      [320,568],[360,800],[375,667],[390,844],[393,852],[412,915],[430,932],
+      [568,320],[667,375],[740,360],[844,390],[915,412],[932,430],[384,216],
+      [768,1024],[820,1180],[1024,768],[900,700],[1000,768],[1280,720],
+      [1280,800],[1366,768],[1536,864],[1920,1080],[2560,1440],[3440,1440]
+    ]){
       await page.setViewportSize({width,height});
       const dimensions=await page.locator('.profile-track-history').evaluate(node=>({client:node.clientWidth,scroll:node.scrollWidth}));
       assert.ok(dimensions.scroll<=dimensions.client+2,'track controls fit '+width+'x'+height);
       if(width<=1000){for(const selector of ['.profile-track-weight','.profile-track-row>time'])assert.equal(await page.locator(selector).first().isVisible(),true,'PB and weight remain visible at '+width+'x'+height);}
-      for(const key of ['track','weight','place','time']){
+      for(const key of ['track','weight','place','percent','time']){
         await page.locator('[data-profile-sort="'+key+'"]').scrollIntoViewIfNeeded();
         const button=await page.locator('[data-profile-sort="'+key+'"]').boundingBox();
         assert.ok(button.x>=0&&button.x+button.width<=width+1&&button.height>=40,'usable sort button at '+width+'x'+height);
@@ -69,6 +77,7 @@ test('profile sorting keeps existing controls and previews; dialog focus respect
     if(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR){await page.setViewportSize({width:390,height:844});await page.locator('.profile-track-head').scrollIntoViewIfNeeded();await page.screenshot({path:process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR+'/profile-390.png'});}
     await page.evaluate(()=>closeRankedDialog(document.querySelector('#overallProfilePopup')));
     assert.equal(await page.evaluate(()=>document.activeElement.id),'opener');
+    assert.deepEqual(await page.evaluate(()=>window.profileCleanup),{podium:1,community:1});
     await page.evaluate(()=>{const dialog=document.querySelector('#overallProfilePopup');openRankedDialog(dialog);closeRankedDialog(dialog);frames.shift()();});
     assert.equal(await page.evaluate(()=>document.activeElement.id),'opener','closed dialog cannot take focus on the next frame');
     await page.evaluate(()=>{openRankedDialog(document.querySelector('#overallProfilePopup'));document.querySelector('#draft').focus();frames.shift()();});

@@ -8,16 +8,27 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const before = '!ghosts.length||ghosts.length>2)throw Error("Event replay context changed")';
 const after = before.replace('>2', '>10');
 
-// Release 394 added this exact source-bound geometry row, not a physics change.
+// Releases 394 and 414 added these exact source-bound rows without changing physics.
+const reviewedExtensions = [
+  ['99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37',
+    '9a4fbc02e4cf8416fc7fd6fc6691072b8b349be5f7f02aab5a7b2990ada6019a', 50193, 604, 604, "Uplink\u26d0Error"],
+  ['b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f',
+    'ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd', 51029, 828, 860, "Magician's Residence"]
+];
+
 export function reviewedHistoricalGeometry(geometry) {
-  const id='b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f';
-  const additions=geometry.tracks.filter(row=>row.id===id);
-  assert.ok(additions.length<=1,'Duplicate reviewed geometry extension');
-  if(additions.length)assert.deepEqual(additions[0],{
-    id,name:'trusted/'+id+'.track',hash:'ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd',
-    parts:51029,spanX:828,spanZ:860,displayName:"Magician's Residence"
+  const seen = new Set();
+  const tracks = geometry.tracks.filter(row => {
+    const expected = reviewedExtensions.find(([id]) => id === row.id);
+    if (!expected) return true;
+    const [, hash, parts, spanX, spanZ, displayName] = expected;
+    const {id} = row;
+    assert.ok(!seen.has(id), 'Duplicate reviewed geometry extension');
+    seen.add(id);
+    assert.deepEqual(row, {id, name: 'trusted/' + id + '.track', hash, parts, spanX, spanZ, displayName});
+    return false;
   });
-  const historical={...geometry,tracks:geometry.tracks.filter(row=>row.id!==id)};
+  const historical = {...geometry, tracks};
   assert.equal(sha(JSON.stringify(historical.tracks)),'3f56ae47e4ad30dbedc0280fbaa820d67f4dba249de411caf723a5ec0d640f99');
   return historical;
 }

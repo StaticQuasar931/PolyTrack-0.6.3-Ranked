@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifiedTargetMs,bootstrapSlots,pendingSlot,verificationKey,VERIFIER_ENGINE_DIGEST,
   VERIFIER_VERSION,VERIFICATION_BOOTSTRAP_ID,verifiedVerdict,PRE_REPLAY_UI_PROOF_ENGINE} from '../src/verification.js';
-import {reviewedWatchUiBaseline} from '../../../tools/verifier/watch-ui-review.mjs';
+import {reviewedHistoricalGeometry,reviewedWatchUiBaseline} from '../../../tools/verifier/watch-ui-review.mjs';
 import {PRE_EVENT_LAUNCH_ENGINE} from '../src/event-engine-compatibility.js';
 
 async function reviewedOpponentFiles(manifest) {
@@ -156,7 +156,7 @@ test('opponent review proves two UI insertions are the entire bundle change and 
  const sha=value=>createHash('sha256').update(value).digest('hex');
  let bundle=reviewedWatchUiBaseline(JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'))).bundle;
  const manifest=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
- const geometry=JSON.parse(fs.readFileSync(new URL('tools/verifier/track-geometry.json',root),'utf8'));
+ const geometry=reviewedWatchUiBaseline(manifest).geometry;
  const opponentFiles=(await reviewedOpponentFiles(manifest)).files;
  const previousFiles={...opponentFiles,'main.bundle.js':review.previousMainBundleSha256};
  assert.equal(sha(JSON.stringify(previousFiles)),review.previousEngine,'all other engine file pins are unchanged');
@@ -182,10 +182,10 @@ test('later Spite geometry review adds exactly one bound exception without rewri
  const fs=await import('node:fs'),{createHash}=await import('node:crypto');
  const root=new URL('../../../',import.meta.url),sha=value=>createHash('sha256').update(value).digest('hex');
  const proof=JSON.parse(fs.readFileSync(new URL('docs/events/spite-geometry-review.json',root),'utf8'));
- const geometry=JSON.parse(fs.readFileSync(new URL('tools/verifier/track-geometry.json',root),'utf8'));
  const priorText=fs.readFileSync(new URL('docs/events/opponent-shortcut-ui-engine-review.json',root),'utf8').replace(/\r\n?/g,'\n');
  assert.equal(proof.schemaVersion,1);
  const pin=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
+ const geometry=reviewedWatchUiBaseline(pin).geometry;
  assert.equal(proof.engineDigest,(await reviewedOpponentFiles(pin)).indexed.previousEngine);
  assert.equal(proof.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');assert.equal(sha(priorText),proof.previousReviewSha256);
  assert.equal(proof.previousGeometryRowsSha256,JSON.parse(priorText).geometryRowsSha256);
@@ -261,7 +261,7 @@ test('Watch review rejects extra edits, altered evidence, geometry and track pin
    {previousReviewText:read(review.previousReview)+' '},
    {review:{...review,previousAssets:{'main.bundle.js':'f'.repeat(64)}}},
    {review:{...review,normalizedUiReplacement:{...review.normalizedUiReplacement,before:'unreviewed'}}},
-   {geometry:{...geometry,tracks:geometry.tracks.slice(1)}},
+   {geometry:{...geometry,tracks:reviewedHistoricalGeometry(geometry).tracks.slice(1)}},
    {geometry:{...geometry,engineDigest:review.previousEngine}}
  ])assert.throws(()=>reviewedWatchUiBaseline(manifest,options));
  assert.throws(()=>reviewedWatchUiBaseline({...manifest,tracks:{...manifest.tracks,unreviewed:'f'.repeat(64)}}));

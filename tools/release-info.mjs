@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 484,
+  "number": 485,
   "version": "0.6.3",
-  "revision": 409,
+  "revision": 410,
   "notes": [
-    "Rankings show more rows in landscape. The More button on compact rankings now explains what it opens to screen readers.",
-    "Track previews can warm again after a temporary failure, without hammering the connection."
+    "Sort Track Breakdown by Top % to compare your best finishes across fields of different sizes."
   ],
-  "preparedAt": "2026-11-24T05:25:19.866Z",
-  "committedAt": "2026-11-24T05:25:21.000Z"
+  "preparedAt": "2026-11-24T06:01:10.051Z",
+  "committedAt": "2026-11-24T06:04:46.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

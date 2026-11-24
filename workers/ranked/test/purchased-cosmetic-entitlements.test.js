@@ -10,12 +10,13 @@ const earned=()=>({plate:['block','outline'],stage:['garage','slate'],stripe:['s
 const buy=(prior=null,id=SHOP_PROFILE_CATALOG[0].id)=>addPurchase(prior,id,at,binding);
 
 test('catalog is fixed profile-only version2 and distinct from retired native presets',()=>{
- assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);assert.equal(SHOP_PROFILE_CATALOG.length,9);
+ assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);assert.equal(SHOP_PROFILE_CATALOG.length,11);
  assert.deepEqual(SHOP_PROFILE_CATALOG.map(i=>[i.id,i.price,i.grants[0].slot,i.grants[0].value]),[
  ['profile-pitlane-ticket',20,'plate','pitlane-ticket'],['profile-apex-observatory',30,'stage','apex-observatory'],['profile-vector-ribbon',50,'stripe','vector-ribbon'],
  ['profile-petrol',16,'theme','petrol'],['profile-navy-secondary',20,'baseSecondary','navy'],
  ['profile-rail',32,'edge','rail'],['profile-rally-lines',36,'stripe','rally-lines'],
- ['profile-book-serif',45,'nameFont','book'],['profile-copper-ink',24,'nameColor','copper']]);
+ ['profile-book-serif',45,'nameFont','book'],['profile-copper-ink',24,'nameColor','copper'],
+ ['profile-porcelain-ink',18,'nameColor','porcelain'],['profile-harbor-night',64,'theme','harbor-night']]);
  for(const item of SHOP_PROFILE_CATALOG){assert.equal(item.kind,'profile-cosmetic');assert.equal(item.grants.length,1);assert.equal('style'in item,false);}
 });
 for(const item of SHOP_PROFILE_CATALOG)test('purchase projects only catalog grant: '+item.id,()=>{
@@ -106,13 +107,13 @@ test('known update-time CAS remains attached to rebuilt purchased allowance',asy
 });
 
 
-test('exact six staged design contracts append to the immutable original v2 prefix', async () => {
+test('exact eight staged design contracts follow the immutable original v2 prefix', async () => {
  const {PROFILE_SHOP_EXPANDED_DESIGNS: designs}=await import('../../../tools/profile-shop-expanded-designs.mjs');
- assert.equal(designs.length,6);assert.equal(SHOP_PROFILE_CATALOG.length,9);
- assert.equal(new Set(SHOP_PROFILE_CATALOG.map(item=>item.id)).size,9);
+ assert.equal(designs.length,8);assert.equal(SHOP_PROFILE_CATALOG.length,11);
+ assert.equal(new Set(SHOP_PROFILE_CATALOG.map(item=>item.id)).size,11);
  assert.deepEqual(SHOP_PROFILE_CATALOG.slice(3).map(item=>({id:item.id,label:item.label,price:item.price,...item.grants[0]})),
  designs.map(item=>({id:item.itemId,label:item.label,price:item.price,slot:item.slot,value:item.value})));
- assert.equal(SHOP_PROFILE_CATALOG.reduce((sum,item)=>sum+item.price,0),273);
+ assert.equal(SHOP_PROFILE_CATALOG.reduce((sum,item)=>sum+item.price,0),355);
 });
 
 test('all new paid slots survive fresh earned projections without preserving stale earned authority',()=>{

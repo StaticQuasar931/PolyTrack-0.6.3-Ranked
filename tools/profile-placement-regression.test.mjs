@@ -38,7 +38,7 @@ function makeSortHarness(profileSort, profileSortDirection) {
   return new Function('deps', source)(context);
 }
 
-for (const mode of ['place', 'track', 'weight', 'time']) {
+for (const mode of ['place', 'track', 'weight', 'time', 'percent']) {
   for (const direction of [1, -1]) {
     test(`${mode} sort keeps every unknown placement after placed rows (direction ${direction})`, () => {
       const rows = [
@@ -60,6 +60,21 @@ for (const mode of ['place', 'track', 'weight', 'time']) {
     });
   }
 }
+
+test('Top % uses raw place divided by field size, with larger fields breaking ties',()=>{
+  const placed=[
+    {trackId:'small',rank:1,fieldSize:7},
+    {trackId:'large',rank:14,fieldSize:2000},
+    {trackId:'summer',rank:16,fieldSize:3687},
+    {trackId:'equal-smaller',rank:7,fieldSize:1000},
+    {trackId:'impossible',rank:6,fieldSize:4},
+    {trackId:'unknown',rank:1},
+  ];
+  assert.equal((100*placed[2].rank/placed[2].fieldSize).toFixed(4),'0.4340');
+  assert.deepEqual(makeSortHarness('percent',1)(placed).map(row=>row.trackId),['summer','large','equal-smaller','small','impossible','unknown']);
+  assert.deepEqual(makeSortHarness('percent',-1)(placed).map(row=>row.trackId),['small','large','equal-smaller','summer','impossible','unknown']);
+  assert.equal(placed[0].trackId,'small');
+});
 
 for(const cloudConfirmed of [false,true])test('complete cached board recomputes placement and labels upload state: confirmed='+cloudConfirmed, () => {
   const trackId = 'release-156-track';

@@ -11,7 +11,7 @@ const baselineSource=proofBaseline?execFileSync('git',['show','f1d9ff030:workers
   :identityBaseline?readFileSync(identityBaseline,'utf8'):null;
 const {default:rankedWorker,rebuildTrack, reconcileCanonicalChanges, updateTrackIdentity, computeTrackEntries, persistTrackSnapshot}=baseline
   ?await import('data:text/javascript,'+encodeURIComponent(baselineSource
-    .replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${new URL('../src/'+path.slice(2),import.meta.url).href}'`)))
+    .replace(/from '(\.{1,2}\/[^']+)'/g,(_,path)=>`from '${new URL(path,new URL('../src/index.js',import.meta.url)).href}'`)))
   :await import('../src/index.js');
 import {eventEncode, eventDecode} from '../src/events-store.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION} from '../src/verification.js';
@@ -1275,7 +1275,7 @@ test('legacy backfill cost: repeated account-ordered pages rebuild a 1136-racer 
     assert.equal(source.split(marker).length,2);
   source=source.replace('if(backfillQueuedTrackIds.has(trackId))continue;','if(false)continue;')
     .replace('if(!job.backfillComplete&&backfillComplete){','if(false){')
-    .replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${new URL('../src/'+path.slice(2),import.meta.url).href}'`);
+    .replace(/from '(\.{1,2}\/[^']+)'/g,(_,path)=>`from '${new URL(path,new URL('../src/index.js',import.meta.url)).href}'`);
   const old=(await import('data:text/javascript,'+encodeURIComponent(source))).reconcileCanonicalChanges;
   const costs={};
   for(const [name,reconcile] of [['before',old],['after',reconcileCanonicalChanges]]){
