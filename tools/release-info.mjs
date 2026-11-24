@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 481,
+  "number": 483,
   "version": "0.6.3",
-  "revision": 407,
+  "revision": 408,
   "notes": [
-    "Your saved Workshop changes show up on your car previews right away, even before the next rankings update."
+    "Improved Summer One replay verification so it can update without changing other event standings."
   ],
-  "preparedAt": "2026-11-23T01:57:54.537Z",
-  "committedAt": "2026-11-23T01:57:56.000Z"
+  "preparedAt": "2026-11-24T05:14:37.671Z",
+  "committedAt": "2026-11-24T05:14:39.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
