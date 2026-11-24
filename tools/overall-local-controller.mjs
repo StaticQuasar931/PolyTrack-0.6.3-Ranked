@@ -1,3 +1,4 @@
+import {MAX_OVERALL_BOARDS} from './overall-board-limits.mjs';
 const projectionUrl=new URL('./overall-local-projection.mjs',import.meta.url);
 projectionUrl.search=new URL(import.meta.url).search;
 const {projectLocalOverall,projectScopedSnapshot}=await import(projectionUrl.href);
@@ -7,7 +8,7 @@ bundleUrl.search=new URL(import.meta.url).search;
 const {decodeOverallProjectionBundle}=await import(bundleUrl.href);
 
 export const LOCAL_OVERALL_RECEIPTS_KEY = 'polytrack-overall-accepted-pbs-v1';
-const MAX_RECEIPTS = 128, MAX_BOARDS = 512, MAX_BYTES = 6 * 1024 * 1024;
+const MAX_RECEIPTS = 128, MAX_BOARDS = MAX_OVERALL_BOARDS, MAX_BYTES = 6 * 1024 * 1024;
 const MAX_AGE = 28 * 86400000, RETRY_MS = 60000;
 const uint = value => Number.isSafeInteger(value) && value >= 0;
 const positive = value => uint(value) && value > 0;

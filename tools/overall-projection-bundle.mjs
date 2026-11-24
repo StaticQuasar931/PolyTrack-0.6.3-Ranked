@@ -1,3 +1,4 @@
+import {MAX_OVERALL_BOARDS} from './overall-board-limits.mjs';
 import {projectLocalOverall} from './overall-local-projection.mjs';
 
 const BINDINGS=['algorithmVersion','schemaVersion','sourceRevision','builtRevision','updatedAt'];
@@ -20,7 +21,7 @@ export function decodeOverallProjectionBundle(bundle,{overall,generation}={}){
   if(!only(bundle,['version',...BINDINGS,'boards',...(compact?['accounts']:[])])||![1,2].includes(bundle.version)||
       !BINDINGS.every(key=>bundle[key]===overall?.[key])||!positive(bundle.sourceRevision)||
       bundle.algorithmVersion!=='participation-v8-s1'||bundle.schemaVersion!==6||
-      !Array.isArray(bundle.boards)||bundle.boards.length>512||!Array.isArray(overall.trackCatalog)||
+      !Array.isArray(bundle.boards)||bundle.boards.length>MAX_OVERALL_BOARDS||!Array.isArray(overall.trackCatalog)||
       bundle.boards.length!==overall.trackCatalog.length)throw Error('Invalid Overall projection source');
   const catalog=new Map(overall.trackCatalog.map(row=>[row.trackId,row.updatedAt]));
   if(catalog.size!==bundle.boards.length)throw Error('Duplicate Overall projection source');
@@ -58,12 +59,12 @@ export async function decodeProjectionResults(packed){
   finally{await reader.cancel().catch(()=>{});}
   const plain=new Uint8Array(size);let offset=0;for(const chunk of chunks){plain.set(chunk,offset);offset+=chunk.length;}
   const data=JSON.parse(new TextDecoder().decode(plain));
-  if(!Array.isArray(data.entries)||data.entries.length>100000||!Array.isArray(data.resultTracks)||data.resultTracks.length>512)throw Error('Invalid decoded projection results');
+  if(!Array.isArray(data.entries)||data.entries.length>100000||!Array.isArray(data.resultTracks)||data.resultTracks.length>MAX_OVERALL_BOARDS)throw Error('Invalid decoded projection results');
   return {...packed,entries:data.entries,resultTracks:data.resultTracks};
 }
 
 export async function createOverallProjectionBundle({overall,results,tracks}={}){
-  if(!Array.isArray(tracks)||tracks.length>512)throw Error('Missing bound Overall source boards');
+  if(!Array.isArray(tracks)||tracks.length>MAX_OVERALL_BOARDS)throw Error('Missing bound Overall source boards');
   let bundle={version:1,...Object.fromEntries(BINDINGS.map(key=>[key,overall?.[key]])),boards:tracks.map(board=>{
     if((board.sourceComplete!==true&&board.complete!==true)||board.totalEntries!==board.entries?.length)throw Error('Incomplete Overall source board');
     return [board.trackId,board.sourceRevision,board.updatedAt??board.builtAt??0,board.entries.length,board.entries.map(row=>

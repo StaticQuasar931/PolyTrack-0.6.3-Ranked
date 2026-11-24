@@ -81,12 +81,12 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(compact&&optimizedIndex&&!fastIndexDisabled&&(response.status===404||response.status===410))response=await fetchSnapshot(new URL('bootstrap-index.json',requestedBase),{credentials:'omit',cache,signal:AbortSignal.timeout(5000)});
         if(compact&&(response.status===404||response.status===410))return null;
         if(!response.ok){const error=Error('Snapshot index unavailable');error.status=response.status;error.base=requestedBase.href;throw error;}
-        const text=await responseBody(response,'text');if(text.length>(compact?2:20)*1024*1024)throw integrityError('Snapshot index too large');
+        const text=await responseBody(response,'text');if(text.length>(compact?2:24)*1024*1024)throw integrityError('Snapshot index too large');
         let index;try{index=JSON.parse(text);}catch{throw integrityError('Invalid snapshot index JSON');}
         if(index?.compactIndexVersion===1){
           const expected=/public-snapshots([1-9]\d*)\/$/.exec(requestedBase.pathname);
           if(expected&&index.generation!==Number(expected[1]))throw integrityError('Snapshot index generation mismatch');
-          if(!compact||!optimizedIndex||!index.files||typeof index.files!=='object'||Array.isArray(index.files)||Object.values(index.files).some(row=>!Array.isArray(row)||row.length!==2||typeof row[0]!=='string'||!/^[a-f0-9]{64}$/.test(row[0])||!Number.isSafeInteger(row[1])||row[1]<1||row[1]>2*1024*1024))throw integrityError('Invalid compact snapshot index');
+          if((compact?!optimizedIndex||index.partial!==true:index.partial!==false)||!index.files||typeof index.files!=='object'||Array.isArray(index.files)||Object.values(index.files).some(row=>!Array.isArray(row)||row.length!==2||typeof row[0]!=='string'||!/^[a-f0-9]{64}$/.test(row[0])||!Number.isSafeInteger(row[1])||row[1]<1||row[1]>2*1024*1024))throw integrityError('Invalid compact snapshot index');
           index.files=Object.fromEntries(Object.entries(index.files).map(([logical,[hash,size]])=>[logical,{path:hash+'.bin',sha256:hash,decodedBytes:size}]));
         }
         if(!index||typeof index!=='object'||Array.isArray(index)||index.schemaVersion!==1||index.encoding!=='gzip-xor-a7-v1'||!index.files||typeof index.files!=='object'||Array.isArray(index.files)||
