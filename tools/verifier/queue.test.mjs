@@ -805,7 +805,7 @@ test('event-only coordinator test is independent of checkout name and working di
     'tools/verifier/weekly-track.mjs','tools/verifier/engine-pin.cjs',
     'tools/verifier/proof-cache.mjs','tools/verifier/proof-cache-file.mjs','tools/verifier/outcome-report.mjs',
     'tools/verifier/kodub-track.cjs','tools/verifier/track-geometry.json',
-    'tools/verifier/similarity.mjs','tools/verifier/input-rate.mjs','tools/verifier/segment-similarity.mjs','tools/verifier/review-inbox.mjs','tools/verifier/replay.cjs','tools/snapshot-package.mjs','tools/snapshot-payload-writer.mjs','tools/track-snapshot-paging.mjs',
+    'tools/verifier/similarity.mjs','tools/verifier/input-rate.mjs','tools/verifier/segment-similarity.mjs','tools/verifier/review-inbox.mjs','tools/verifier/replay.cjs','tools/snapshot-package.mjs','tools/private-snapshot-index.mjs','tools/snapshot-payload-writer.mjs','tools/track-snapshot-paging.mjs',
     'tools/snapshot-event-recordings.mjs','tools/event-recording-binding.mjs','tools/public-replay-playback.mjs','tools/playback-engine-session.mjs','tools/playback-engine-pin.mjs',
     'workers/ranked/src/competitive-review.js','workers/ranked/src/review-inbox.js','workers/ranked/src/verification.js','workers/ranked/src/verification-shards.js','workers/ranked/src/extra-track-ids.js','workers/ranked/package.json'];
   // Copy only coordinator source. No credentials, engine assets, browser, or network are needed.

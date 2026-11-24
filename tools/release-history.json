@@ -1,15 +1,32 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 486,
+    "number": 488,
     "version": "0.6.3",
-    "revision": 411,
+    "revision": 412,
     "notes": [
-      "Find Community Tracks by typing a name or RHR, then press Enter. Use 1-9 to open a track, ? to pick from this list, or ! to pick from all loaded tracks.",
-      "Switch Community versions with Shift+Left or Shift+Right. Discovery has a quick keyboard tutorial."
+      "Ranked leaderboards now include newly saved race times.",
+      "Corrected Rolling Hills Racer event standings so verified Event RP matches the replay."
     ]
   },
   "entries": [
+    {
+      "number": null,
+      "title": "Sync public ranked snapshots",
+      "commit": "4b70447e285d20ab7b2651b172dba981eeed2e52",
+      "committedAt": "2026-11-24T10:29:00.000Z",
+      "notes": []
+    },
+    {
+      "number": 486,
+      "title": "Find and open tracks by keyboard",
+      "commit": "f5e4c5a0cd27d2bbe923a3d4045b7d98c3ff79dc",
+      "committedAt": "2026-11-24T06:23:36.000Z",
+      "notes": [
+        "Find Community Tracks by typing a name or RHR, then press Enter. Use 1-9 to open a track, ? to pick from this list, or ! to pick from all loaded tracks.",
+        "Switch Community versions with Shift+Left or Shift+Right. Discovery has a quick keyboard tutorial."
+      ]
+    },
     {
       "number": 485,
       "title": "Sort track results by Top %",
@@ -172,24 +189,6 @@
       "committedAt": "2026-11-22T21:30:13.000Z",
       "notes": [
         "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
-      ]
-    },
-    {
-      "number": 463,
-      "title": "Prioritize required boards for ranking updates",
-      "commit": "ea9df45304641f0057ec34a20807a29116caf165",
-      "committedAt": "2026-11-22T21:22:25.000Z",
-      "notes": [
-        "Rankings updates prioritize the track boards needed for Overall rankings."
-      ]
-    },
-    {
-      "number": 462,
-      "title": "Keep saved Workshop styles on personal replays",
-      "commit": "2dbf15c499575e2488485b70f0c81178716a93b7",
-      "committedAt": "2026-11-22T21:11:00.000Z",
-      "notes": [
-        "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
       ]
     }
   ],

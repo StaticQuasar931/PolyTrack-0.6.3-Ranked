@@ -512,7 +512,7 @@ test('the current shipped snapshot fits per-package CDN budgets without dropping
   await mkdir(objects);
   const sourceObjects=execFileSync('git',['-C',root,'rev-parse','--path-format=absolute','--git-path','objects'],{encoding:'utf8'}).trim();
   // Tree/blob assembly must not write to the shared checkout's object database.
-  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options,
+  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:32*1024*1024,...options,
     env:{...isolatedGitEnvironment(process.env,options.env),GIT_OBJECT_DIRECTORY:objects,GIT_ALTERNATE_OBJECT_DIRECTORIES:sourceObjects}});
   const commit=process.env.POLYTRACK_CDN_TEST_COMMIT||local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit,read:async file=>Buffer.from(local(['show',commit+':'+file],{encoding:null}))});
   let selected=[];
