@@ -1,3 +1,4 @@
+import {PRIVATE_NORMAL_BOARD_BYTES} from './private-snapshot-board.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
@@ -12,7 +13,7 @@ import {ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 import {EXPANDED_FULL_CANONICAL_LIMIT} from './full-snapshot-policy.mjs';
 
 export const FULL_CANONICAL_LIMITS = Object.freeze({documents: EXPANDED_FULL_CANONICAL_LIMIT, page: 100, catchupMemoryBytes:256 * 1024 * 1024,
-  memoryBytes: 64 * 1024 * 1024, normalBoardBytes:4 * 1024 * 1024, fileBytes: 2 * 1024 * 1024});
+  memoryBytes: 64 * 1024 * 1024, normalBoardBytes:PRIVATE_NORMAL_BOARD_BYTES, fileBytes: 2 * 1024 * 1024});
 const COLLECTION = '0.6.2_race_results';
 const HASH = /^[a-f0-9]{64}$/;
 const DATE_FIELDS = ['createdAt', 'pbAt', 'updatedAt', 'ingestedAt'];
@@ -306,8 +307,10 @@ async function readOverallMetadata(root, memory, parse = true) {
   } finally { if (handle) await handle.close(); release(); }
 }
 
-const capturedFileBound=relative=>/^tracks\/[a-f0-9]{64}\.json$/.test(relative)?FULL_CANONICAL_LIMITS.normalBoardBytes:FULL_CANONICAL_LIMITS.fileBytes;
-async function transaction(root, checkpoint, memory) {
+const ordinaryNormalBoardBytes=4 * 1024 * 1024;
+const boardFileBound=(relative,normalBoardBytes)=>/^tracks\/[a-f0-9]{64}\.json$/.test(relative)?normalBoardBytes:FULL_CANONICAL_LIMITS.fileBytes;
+async function transaction(root, checkpoint, memory, normalBoardBytes, reportOutputLimit) {
+  const capturedFileBound=relative=>boardFileBound(relative,normalBoardBytes);
   const originals = new Map(), writes = new Map();
   let overallDependency;
   let serial = 0;
@@ -352,7 +355,10 @@ async function transaction(root, checkpoint, memory) {
     const release = memory.claim(objectSize(value) * 2);
     try {
       const bytes = Buffer.from(JSON.stringify(value) + '\n');
-      if (bytes.length > capturedFileBound(relative)) fail('output_cap', true);
+      if (bytes.length > capturedFileBound(relative)) {
+        reportOutputLimit(relative, bytes.length);
+        fail('output_cap', true);
+      }
       const previous = originals.get(relative);
       const descriptor = {sha256: sha(bytes), bytes: bytes.length};
       if (previous?.hash === descriptor.sha256) return descriptor;
@@ -379,7 +385,7 @@ async function transaction(root, checkpoint, memory) {
     demand(ref === null ? bytes === null : bytes !== null && sha(bytes) === ref.hash, 'stage_changed');
   }
   async function commit() {
-    const scratch = memory.claim(FULL_CANONICAL_LIMITS.normalBoardBytes * 3);
+    const scratch = memory.claim(normalBoardBytes * 3);
     const temporary = [], committed = [], directories = [];
     try {
       if (overallDependency !== undefined) demand((await readOverallMetadata(root, memory, false)).hash === overallDependency, 'stage_changed');
@@ -484,7 +490,10 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
       checkpoint = await checked(parent, `full-canonical-${randomUUID()}`, true);
       await fs.mkdir(checkpoint, {mode: 0o700});
     }
-    const tx = await transaction(root, checkpoint, memory);
+    const normalBoardBytes=documentLimit>30000?FULL_CANONICAL_LIMITS.normalBoardBytes:ordinaryNormalBoardBytes;
+    const tx = await transaction(root, checkpoint, memory, normalBoardBytes, (relative, bytes) => {
+      report.outputLimit = {kind: /^tracks\//.test(relative) ? 'track-board' : 'snapshot-file', bytes, limit: boardFileBound(relative,normalBoardBytes)};
+    });
     const savedManifest = await tx.read('manifest.json');
     const manifest = savedManifest.value ?? {schemaVersion: 1, source: 'full-canonical-capture', tracks: {}};
     demand(plain(manifest) && plain(manifest.tracks) &&

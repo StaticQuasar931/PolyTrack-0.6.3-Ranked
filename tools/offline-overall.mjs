@@ -1,3 +1,4 @@
+import {MAX_OVERALL_BOARDS} from './overall-board-limits.mjs';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {computeOverall, packPlannerResults, rankTrustedTrackEntries, trackWeightParts} from '../workers/ranked/src/index.js';
@@ -120,11 +121,11 @@ export async function buildOfflineOverall({tracks, previousOverall, previousCalc
   const sanitizedPrior = sanitizeOverall(previousOverall).snapshot.entries;
   if (!positive(previousOverall.sourceRevision) || !positive(previousOverall.updatedAt) ||
       previousOverall.builtRevision !== previousOverall.sourceRevision) throw Error('Invalid baseline source binding');
-  if (!Array.isArray(expectedTrackIds) || !expectedTrackIds.length || expectedTrackIds.length > 500 ||
+  if (!Array.isArray(expectedTrackIds) || !expectedTrackIds.length || expectedTrackIds.length > MAX_OVERALL_BOARDS ||
       expectedTrackIds.some(id => !ID.test(id)) || new Set(expectedTrackIds).size !== expectedTrackIds.length) throw Error('Invalid expected track catalog');
   const expected = new Set(expectedTrackIds);
   for (const row of previousOverall.trackCatalog || []) if (!expected.has(row.trackId)) throw Error('Missing expected known track');
-  if (!Array.isArray(tracks) || tracks.length !== expected.size || tracks.length > 500) throw Error('Missing or incomplete track boards');
+  if (!Array.isArray(tracks) || tracks.length !== expected.size || tracks.length > MAX_OVERALL_BOARDS) throw Error('Missing or incomplete track boards');
   if (!Array.isArray(previousOverall.entries) || previousOverall.entries.length > 10000) throw Error('Invalid baseline entries limit');
   const priorIds = new Set();
   const prior = previousOverall.entries.map((row, index) => {
@@ -255,8 +256,8 @@ export async function buildOfflineOverall({tracks, previousOverall, previousCalc
   const metadata = {...MODEL, sourceRevision: revision, builtRevision: revision, revision, updatedAt, builtAt: updatedAt};
   const raw = {...metadata, serverAchievementVersion: SERVER_ACHIEVEMENT_VERSION, entries, trackSummaries: [], trackCatalog: boards.map(b => ({trackId: b.trackId, updatedAt: b.updatedAt})),
     complete: true, sourceComplete: true, totalEntriesExact: true, totalEntries: entries.length, publishedEntries: entries.length,
-    entryLimit: entries.length <= 200 ? 200 : 10000, trackLimit: 500, averagePlacementVersion: 2};
-  const packed = await packOfflineResults(entries, raw, {boardCount: boards.length, boardLimit: 500, boardLimitReached: false});
+    entryLimit: entries.length <= 200 ? 200 : 10000, trackLimit: MAX_OVERALL_BOARDS, averagePlacementVersion: 2};
+  const packed = await packOfflineResults(entries, raw, {boardCount: boards.length, boardLimit: MAX_OVERALL_BOARDS, boardLimitReached: false});
   if (!packed.resultBundleComplete) throw Error('Incomplete authoritative planner bundle: ' + packed.resultBundleStatus);
   const {snapshot: overall, planner} = sanitizeOverall({...raw, ...packed});
   Object.assign(overall, {ranksExact: true, catalogComplete: true, trackCatalogComplete: true});

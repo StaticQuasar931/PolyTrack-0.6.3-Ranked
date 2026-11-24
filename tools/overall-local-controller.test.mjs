@@ -1,3 +1,4 @@
+import {MAX_OVERALL_BOARDS} from './overall-board-limits.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
@@ -126,7 +127,7 @@ test('missing/partial inputs return unavailable without an exact projection',asy
   assert.equal(state.status,'unavailable');assert.equal(state.result.calculationExact,false);assert.equal(state.result.projection,null);
 });
 test('oversized catalogs stop before any track read',async()=>{
-  const f=fixture();f.data.overall.trackCatalog=Array.from({length:513},(_,i)=>({trackId:'t'+i,updatedAt:100}));f.data.results.resultBoardCount=513;
+  const f=fixture();f.data.overall.trackCatalog=Array.from({length:MAX_OVERALL_BOARDS+1},(_,i)=>({trackId:'t'+i,updatedAt:100}));f.data.results.resultBoardCount=MAX_OVERALL_BOARDS+1;
   f.ack();const state=await f.controller.update();assert.equal(state.status,'unavailable');assert.equal(f.calls.length,2);
 });
 test('track reads use at most four workers, stop on failure, and drain before retry',async()=>{

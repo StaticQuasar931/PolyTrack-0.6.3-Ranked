@@ -135,6 +135,26 @@ export async function snapshotReplayCompleteness(directory){
   return report;
 }
 
+// The saved November 24 canonical import did not acquire fresh timed-event inputs.
+// This approval retains only Snapshot 93's unchanged unpublished pending cohort.
+export const INHERITED_DEFERRED_REPLAY_APPROVAL = Object.freeze({
+  schemaVersion:1, baselineGeneration:93,
+  baselineIndexSha256:'91dd43f7bf42bb181e3da61ea4665cd2c29f2e9f83083c43927d26296ac23bca',
+  deferred:146
+});
+
+export function inheritedDeferredReplayCount(manifest) {
+  if(!Object.hasOwn(manifest??{},'inheritedDeferredReplayApproval'))return 0;
+  const approval=manifest.inheritedDeferredReplayApproval, coverage=manifest.pendingPlaybackCoverage;
+  const expected=INHERITED_DEFERRED_REPLAY_APPROVAL;
+  if(!object(approval)||Object.keys(approval).length!==Object.keys(expected).length||
+     Object.entries(expected).some(([key,value])=>approval[key]!==value)||
+     coverage?.scope!=='selected-saved-event-boards'||coverage.known!==177||coverage.published!==31||
+     coverage.missing!==146||coverage.deferred!==146||coverage.failed!==0||coverage.complete!==false)
+    throw Error('Inherited pending replay coverage differs from the approved snapshot baseline');
+  return expected.deferred;
+}
+
 export async function assertSnapshotReplayCompleteness(directory,{deferredUnpublishedPending=0}={}){
   const coverage=await snapshotReplayCompleteness(directory);
   const onlyUnpublished = Number.isSafeInteger(deferredUnpublishedPending) && deferredUnpublishedPending > 0 &&

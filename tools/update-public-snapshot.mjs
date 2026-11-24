@@ -20,7 +20,7 @@ import {captureOverallProjection, applyCapturedOverallProjection, overallCapture
 import {readRepositoryVerificationAuthority, verificationAuthority as validateVerificationAuthority} from './verifier/local-snapshot-verification.mjs';
 import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
 import {createCanonicalRetentionCapture} from './canonical-retention-capture.mjs';
-import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
+import {assertSnapshotReplayCompleteness,inheritedDeferredReplayCount} from './snapshot-replay-completeness.mjs';
 import {eventCatalogHandoffFromEnvironment} from './capture-event-catalog.mjs';
 import {writeHydratedFiles} from './hydrated-file-writer.mjs';
 import {comparePublishedSnapshotAdditions} from './snapshot-update-additions.mjs';
@@ -327,7 +327,7 @@ async function rebaseStaging(root, stagingDirectory, currentDirectory, currentGe
   return { directory: currentDirectory, backup: path.basename(backup) };
 }
 
-function makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary, evidence = {}) {
+export function makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary, evidence = {}) {
   const replayCount = manifest?.eventReplays && typeof manifest.eventReplays === 'object'
     ? Object.keys(manifest.eventReplays).length
     : Number.isSafeInteger(manifest?.eventReplays) ? manifest.eventReplays : null;
@@ -681,8 +681,8 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
 
   const overall = await readJsonIfPresent(path.join(stagingDirectory, 'overall.json'));
   let manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
-  let deferredUnpublishedPending = 0;
-  if (manifest?.pendingPlaybackCoverage?.missing > 0 &&
+  let deferredUnpublishedPending = offline ? inheritedDeferredReplayCount(manifest) : 0;
+  if (deferredUnpublishedPending === 0 && manifest?.pendingPlaybackCoverage?.missing > 0 &&
       manifest.pendingPlaybackCoverage.scope === 'selected-saved-event-boards') {
     const previous = await readJsonIfPresent(path.join(absoluteRoot, 'snapshot-current.json'));
     if (previous && /^public-snapshots[1-9][0-9]*$/.test(previous.currentdir || '')) {

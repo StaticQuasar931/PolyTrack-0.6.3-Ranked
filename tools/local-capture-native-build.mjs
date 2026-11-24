@@ -8,12 +8,12 @@ export const NATIVE_SOURCE_SHA256='99197d719c7fdfa781b80e1b345c1710b9f4f93e009d5
 export const NATIVE_TOOLCHAIN=Object.freeze({
   'csc.exe':'eca02e6b15cde93009a59a3d129d5a77fb5008f2e1cf62cf573b6737c747ecc3',
   'csc.exe.config':'2d4610ade011e530d817dd3ba4fc787e5dc0c2297cc520c30a643b8fb13f9093',
-  'mscorlib.dll':'94715f6991e2b9dc7481532c05aa99e74a5fff4ee147be541bca27f99e003fc7',
+  'mscorlib.dll':'c7d93dde7d295c9c40c6b92c13b4e602369c05d81368d811b6418234f6ab22ef',
   'System.dll':'09787b4f38f4f020c6b8a3894146085d4df7b8ae337577ed42d9acf1419660e8',
   'System.Core.dll':'d1bafee1a4dd7e7bd9adf6859e7b1b654d1b4e0d031a38795e33ba040508c09d'
 });
 const BUILD_VERSION=1,MAX_FILES=32,MAX_BINARY=1024*1024;
-const ACL_TOOL_SHA256='d8f182560210d43baaf767d482ad1dc1207372522e91413b9d5e515a875e552d';
+const ACL_TOOL_SHA256='95ce2acbc6cd9d7f4a22759d39a8d40fc2a53ceeecf068ef856849f0d2076961';
 const SWITCHES=Object.freeze(['/nologo','/noconfig','/nostdlib+','/target:exe','/platform:x64','/optimize+','/debug-']);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const TOOLCHAIN_KEY=hash(JSON.stringify({version:BUILD_VERSION,toolchain:NATIVE_TOOLCHAIN,switches:SWITCHES}));

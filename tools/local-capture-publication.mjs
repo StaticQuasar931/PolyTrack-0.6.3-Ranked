@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -52,7 +53,7 @@ export async function validateSnapshotPayloads({folder,items,readFile=fs.readFil
 
 export async function snapshotPublicationFiles({root,directory}){
   if(! /^public-snapshots[1-9][0-9]*$/.test(directory||''))throw Error('Invalid publication directory');
-  const folder=path.join(root,directory),index=JSON.parse(await fs.readFile(path.join(folder,'index.json'),'utf8'));
+  const folder=path.join(root,directory),index=JSON.parse(await readPrivateSnapshotIndex(path.resolve(folder,'index.json')));
   if(index.schemaVersion!==1||index.generation!==Number(directory.slice(16))||!index.files||Array.isArray(index.files))throw Error('Invalid package index');
   const expected=new Set(['index.json']);
   for(const relative of await validateSnapshotPayloads({folder,items:Object.values(index.files)}))expected.add(relative);

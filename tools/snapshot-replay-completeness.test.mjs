@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {snapshotReplayCompleteness,assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
+import {snapshotReplayCompleteness,assertSnapshotReplayCompleteness,inheritedDeferredReplayCount,INHERITED_DEFERRED_REPLAY_APPROVAL} from './snapshot-replay-completeness.mjs';
 
 const accountId='a'.repeat(64),trackId='b'.repeat(64),runId='c'.repeat(64);
 const recording=deflateSync(Buffer.alloc(15)).toString('base64url');
@@ -195,4 +195,15 @@ test('explicit unpublished pending coverage does not excuse an advertised record
   await assert.rejects(assertSnapshotReplayCompleteness(f.root,{deferredUnpublishedPending:1}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
   await f.normal();
   await assert.rejects(assertSnapshotReplayCompleteness(f.root,{deferredUnpublishedPending:2}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
+});
+
+test('the inherited approval permits only the existing 146 deferred inputs',()=>{
+ const approved={inheritedDeferredReplayApproval:INHERITED_DEFERRED_REPLAY_APPROVAL,
+   pendingPlaybackCoverage:{scope:'selected-saved-event-boards',known:177,published:31,missing:146,deferred:146,failed:0,complete:false}};
+ assert.equal(inheritedDeferredReplayCount({}),0);
+ assert.equal(inheritedDeferredReplayCount(approved),146);
+ for(const delta of [{known:178},{missing:147},{published:30},{failed:1},{deferred:145},{complete:true}]){
+   assert.throws(()=>inheritedDeferredReplayCount({...approved,pendingPlaybackCoverage:{...approved.pendingPlaybackCoverage,...delta}}),/differs/);
+ }
+ assert.throws(()=>inheritedDeferredReplayCount({...approved,inheritedDeferredReplayApproval:{...INHERITED_DEFERRED_REPLAY_APPROVAL,baselineGeneration:94}}),/differs/);
 });

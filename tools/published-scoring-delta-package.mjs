@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES, readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {promises as fs, constants} from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -47,7 +48,7 @@ export async function validateScoringDeltaDirectory({directory, sourceIndex, ind
       const name = prefix + item.name, file = path.join(current, item.name), stat = await fs.lstat(file);
       demand(!stat.isSymbolicLink(), 'candidate_link');
       if (stat.isDirectory()) {demand(name === 'lookup-shards', 'extraneous_directory'); await inventory(file, name + '/');}
-      else {demand(stat.isFile() && stat.nlink === 1 && expected.has(name) && stat.size <= MAX_FILE_BYTES, 'extraneous_or_linked_file'); seen.add(name);}
+      else {demand(stat.isFile() && stat.nlink === 1 && expected.has(name) && stat.size <= (name==='index.json'?PRIVATE_SNAPSHOT_INDEX_BYTES:MAX_FILE_BYTES), 'extraneous_or_linked_file'); seen.add(name);}
     }
   }
   await inventory(directory); demand(seen.size === expected.size, 'missing_file');
@@ -68,8 +69,8 @@ export async function buildPublishedScoringDeltaPackage(options) {
   demand(parent.toLowerCase() === path.dirname(output).toLowerCase() && !inside(output, source) && !inside(source, output), 'overlapping_or_linked_roots');
   const cohort = await loadPublishedRollingCohort({root: source, expectedGeneration, expectedIndexSha256});
   const proposal = proposePublishedRollingRebalance(cohort), sourceDirectory = path.join(source, cohort.baseline.provenance.currentdir);
-  const indexBytes = await fs.readFile(path.join(sourceDirectory, 'index.json'));
-  demand(indexBytes.length <= MAX_FILE_BYTES && sha(indexBytes) === expectedIndexSha256, 'source_index_hash');
+  const indexBytes = await readPrivateSnapshotIndex(path.resolve(sourceDirectory,'index.json'));
+  demand(sha(indexBytes) === expectedIndexSha256, 'source_index_hash');
   const sourceIndex = JSON.parse(indexBytes);
   demand(Object.keys(sourceIndex.files).length <= 100000 && sourceIndex.encoding === 'gzip-xor-a7-v1', 'source_index_schema');
   for (const [logical, record] of Object.entries(sourceIndex.files)) demand(validLogical(logical) && validRecord(record), 'source_record');
@@ -113,7 +114,7 @@ export async function buildPublishedScoringDeltaPackage(options) {
     demand(decoded.length === record.decodedBytes, 'codec_length');
   }
   const metadata = metadataFiles(index);
-  demand(metadata.get('index.json').length <= MAX_FILE_BYTES && metadata.get('bootstrap-index.json').length <= MAX_DECODED_BYTES, 'metadata_too_large');
+  demand(metadata.get('index.json').length <= PRIVATE_SNAPSHOT_INDEX_BYTES && metadata.get('bootstrap-index.json').length <= MAX_DECODED_BYTES, 'metadata_too_large');
   await fs.mkdir(output);
   const directory = path.join(output, 'public-snapshots' + index.generation); await fs.mkdir(directory);
   const paths = [...new Set(Object.values(index.files).map(record => record.path))];

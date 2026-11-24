@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
@@ -47,7 +48,7 @@ async function validateNativeTotalsOverlay(root, value, manifest, capturedBoards
   if(rebased){
     const pin=overlay.publishedBaseline,periods=overlay.retainedPeriodIds;
     const pointer=await json(root,'snapshot-current.json'),generation=Number(/^public-snapshots([1-9][0-9]*)$/.exec(pointer.currentdir||'')?.[1]);
-    const currentIndex=Number.isSafeInteger(generation)?await json(root,pointer.currentdir+'/index.json'):null;
+    const currentIndex=Number.isSafeInteger(generation)?JSON.parse(await readPrivateSnapshotIndex(path.resolve(root,pointer.currentdir,'index.json'))):null;
     if(overlay.backendPairingDigest!==overlay.totalsBaselineDigest||overlay.finiteCoverage!=='projected-periods-with-retained-history'||
       !object(pin)||pin.kind!=='hash-pinned-published-current'||!Number.isSafeInteger(pin.generation)||pin.generation<1||pin.generation>=generation||pin.currentdir!=='public-snapshots'+pin.generation||
       !Number.isSafeInteger(pin.publishedAt)||pin.publishedAt<=0||!Number.isSafeInteger(currentIndex?.publishedAt)||pin.publishedAt>currentIndex.publishedAt||
@@ -298,7 +299,7 @@ export async function captureBinding(root) {
   const directory = JSON.parse(pointer).currentdir;
   if (!/^public-snapshots[1-9]\d*$/.test(directory)) throw Error('Invalid snapshot pointer');
   if (!(await fs.lstat(path.join(root, directory))).isDirectory()) throw Error('Invalid snapshot directory');
-  const indexBytes = await bytes(root, directory + '/index.json');
+  const indexBytes = await readPrivateSnapshotIndex(path.resolve(root,directory,'index.json'));
   const index = JSON.parse(indexBytes);
   if (index.schemaVersion !== 1 || index.generation !== Number(directory.slice(16)) ||
       index.encoding !== 'gzip-xor-a7-v1' || !index.files || Array.isArray(index.files) ||

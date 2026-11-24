@@ -7,7 +7,7 @@ import {savedEventDispatchPlan} from './saved-event-offline-plan.mjs';
 import {preparePublishedOfflineVerification} from '../public-offline-verification.mjs';
 import {verifyNativeSnapshotPhase} from '../native-snapshot-phase.mjs';
 import {publishSnapshot} from '../snapshot-package.mjs';
-import {assertSnapshotReplayCompleteness} from '../snapshot-replay-completeness.mjs';
+import {assertSnapshotReplayCompleteness,inheritedDeferredReplayCount} from '../snapshot-replay-completeness.mjs';
 import {captureBinding} from '../workflow-capture-coordination.mjs';
 import {createInterface} from 'node:readline';
 
@@ -37,7 +37,7 @@ export function savedEventSnapshotSparsePatterns(generation){
 }
 
 export async function runSavedEventVerification({root,runDirectory,env=process.env},{
- git=(args)=>execFileSync('git',args,{cwd:root,maxBuffer:20*1024*1024}),
+ git=(args)=>execFileSync('git',args,{cwd:root,maxBuffer:32*1024*1024}),
  prepare=preparePublishedOfflineVerification,verifyPhase=verifyNativeSnapshotPhase,
  replayAudit=assertSnapshotReplayCompleteness,publishPackage=publishSnapshot,auditPackage=captureBinding,now=Date.now,checkpointLog=()=>{}}={}){
  demand(typeof checkpointLog==='function','checkpoint logger required');
@@ -61,6 +61,8 @@ export async function runSavedEventVerification({root,runDirectory,env=process.e
    ...(warmupFirst?{firstProofCheckpoint:record=>save('first-proof-pass',record)}:{}),
    progressCheckpoint:record=>save('progress',record),proofCheckpoint:record=>save('failure-checkpoint',record)})});
  // Verify once, then consume its live compile capability. Serialized evidence is never imported.
+ const sourceManifest=JSON.parse(await fs.readFile(path.join(prepared.directory,'manifest.json')));
+ const inheritedDeferred=inheritedDeferredReplayCount(sourceManifest);
  const verified=await prepared.verify();
   demand(prepared.receipt?.backendReads===0&&prepared.receipt?.backendWrites===0&&
    verified.receipt?.authority===false&&verified.receipt?.kind==='completed-in-process-native-verification'&&
@@ -72,7 +74,9 @@ export async function runSavedEventVerification({root,runDirectory,env=process.e
    demand(compiled.compilationComplete===true&&compiled.backendReads===0&&compiled.backendWrites===0&&
     compiled.ledgerManifestHash===verified.receipt.ledgerManifestHash&&
     JSON.stringify(compiled.sourceBinding)===JSON.stringify(verified.receipt.sourceBinding),'compiled candidate does not match live completed proof');
-   const replay=await replayAudit(prepared.directory);
+   const finalManifest=JSON.parse(await fs.readFile(path.join(prepared.directory,'manifest.json')));
+   demand(inheritedDeferredReplayCount(finalManifest)===inheritedDeferred,'inherited pending replays changed during verification');
+   const replay=await replayAudit(prepared.directory,{deferredUnpublishedPending:inheritedDeferred});
    // An old scoring-only declaration cannot claim hashes of newly compiled event totals.
    const manifestPath=path.join(prepared.directory,'manifest.json');
    const manifest=JSON.parse(await fs.readFile(manifestPath));

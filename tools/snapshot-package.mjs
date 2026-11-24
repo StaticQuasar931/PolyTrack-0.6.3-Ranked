@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES, readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {deriveEventRecordings} from './snapshot-event-recordings.mjs';
 import {writeSnapshotPayloads} from './snapshot-payload-writer.mjs';
 import { createHash } from 'node:crypto';
@@ -219,8 +220,7 @@ async function collectJsonFiles(directory) {
 
 async function readIndex(directory) {
   try {
-    const bytes = await fs.readFile(path.join(directory, 'index.json'));
-    if (bytes.byteLength > MAX_FILE_BYTES) return null;
+    const bytes = await readPrivateSnapshotIndex(path.join(directory, 'index.json'));
     const index = JSON.parse(bytes.toString('utf8'));
   return index?.schemaVersion === 1 && index.files && typeof index.files === 'object' ? index : null;
   } catch { return null; }
@@ -272,8 +272,7 @@ async function matchesPublished(entries, index, directory) {
 }
 
 async function archiveGeneration(sourceDirectory, historyDirectory, generation) {
-  const indexBytes = await fs.readFile(path.join(sourceDirectory, 'index.json'));
-  if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError('Published index exceeds file limit');
+  const indexBytes = await readPrivateSnapshotIndex(path.join(sourceDirectory, 'index.json'));
   const index = JSON.parse(indexBytes.toString('utf8'));
   const files = {};
   const entries = Object.entries(index.files);
@@ -305,7 +304,7 @@ export async function restoreSnapshotArchive(archivePath, destinationDirectory) 
   const contents = JSON.parse((await gunzipAsync(await fs.readFile(archivePath))).toString('utf8'));
   if (contents.schemaVersion !== 1 || !contents.index?.files || typeof contents.index.files !== 'object') throw new Error('Invalid snapshot history archive');
   await fs.mkdir(destinationDirectory, { recursive: true });
-  await fs.writeFile(path.join(destinationDirectory, 'index.json'), JSON.stringify(contents.index, null, 2));
+  await fs.writeFile(path.join(destinationDirectory, 'index.json'), JSON.stringify(contents.index)+'\n');
   if (contents.bootstrapIndex && contents.index.lookupShardsVersion === 1) await fs.writeFile(path.join(destinationDirectory, 'bootstrap-fast.json'), JSON.stringify(buildSnapshotFastIndex(contents.index)) + '\n', { flag: 'wx' });
   if (contents.bootstrapIndex) await fs.writeFile(path.join(destinationDirectory, 'bootstrap-index.json'), `${JSON.stringify(contents.bootstrapIndex)}\n`, { flag: 'wx' });
   for (const item of Object.values(contents.index.files)) {
@@ -344,7 +343,7 @@ async function assertCandidate(directory, identity, expected) {
         await walk(file, relative + '/'); continue;
       }
       const wanted = expected.get(relative);
-      if (!stat.isFile() || stat.nlink !== 1 || !wanted || stat.size !== wanted.bytes || stat.size > MAX_FILE_BYTES) invalid();
+      if (!stat.isFile() || stat.nlink !== 1 || !wanted || stat.size !== wanted.bytes || stat.size > (relative === 'index.json' ? PRIVATE_SNAPSHOT_INDEX_BYTES : MAX_FILE_BYTES)) invalid();
       const handle = await fs.open(file, 'r');
       try {
         const opened = await handle.stat(), hash = createHash('sha256');
@@ -416,7 +415,12 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
   const directoryName = `public-snapshots${generation}`;
   const finalDirectory = path.join(absoluteRoot, directoryName);
   const stagingPublish = path.join(absoluteRoot, `.${directoryName}.${process.pid}.tmp`);
-  const files = {};
+  const publishedAt=now();if(!Number.isSafeInteger(publishedAt)||publishedAt<=0||publishedAt>8640000000000000)throw Error('Invalid snapshot package publication time');
+  const indexHeader = { schemaVersion: 1, generation, publishedAt, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1 };
+  const sampleHash = '0'.repeat(64);
+  const files = Object.fromEntries(entries.map(({logicalPath,bytes})=>[logicalPath,{path:sampleHash+'.bin',sha256:sampleHash,decodedBytes:bytes.length}]));
+  const indexSize = Buffer.byteLength(JSON.stringify({...indexHeader,files})+'\n');
+  if(indexSize>PRIVATE_SNAPSHOT_INDEX_BYTES)throw new RangeError('index.json exceeds '+PRIVATE_SNAPSHOT_INDEX_BYTES+' bytes');
   const expected = new Map();
   const remember = (name, bytes) => expected.set(name, {bytes: bytes.byteLength, sha256: sha256(bytes)});
   let candidateIdentity = null;
@@ -429,14 +433,13 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
       expected.set(payloadName, {bytes: encodedBytes, sha256: payloadHash});
       files[logicalPath] = { path: payloadName, sha256: payloadHash, decodedBytes };
     }
-    const publishedAt=now();if(!Number.isSafeInteger(publishedAt)||publishedAt<=0||publishedAt>8640000000000000)throw Error('Invalid snapshot package publication time');
-    const index = { schemaVersion: 1, generation, publishedAt, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1, files };
+    const index = {...indexHeader,files};
     await writeSnapshotLookupShards(index, stagingPublish);
     for (const [bucket, shard] of buildSnapshotLookupShards(index)) {
       remember(`lookup-shards/${bucket}.json`, Buffer.from(JSON.stringify(shard) + '\n'));
     }
     const indexBytes = Buffer.from(`${JSON.stringify(index)}\n`, 'utf8');
-    if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError(`index.json exceeds ${MAX_FILE_BYTES} bytes`);
+    if(indexBytes.byteLength!==indexSize)throw new RangeError('Preflight snapshot index size changed');
     await fs.writeFile(path.join(stagingPublish, 'index.json'), indexBytes, { flag: 'wx' });
     remember('index.json', indexBytes);
     if (entries.some(entry => entry.logicalPath === 'snapshot-paging.json')) {

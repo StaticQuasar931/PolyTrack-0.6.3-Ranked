@@ -1,3 +1,4 @@
+import {PRIVATE_NORMAL_BOARD_BYTES} from './private-snapshot-board.mjs';
 // Opaque, read-only capability for one complete frozen canonical capture.
 import fs from 'node:fs/promises';import path from 'node:path';import{createHash}from'node:crypto';
 const sources=new WeakSet(),HASH=/^[a-f0-9]{64}$/;
@@ -8,7 +9,7 @@ export async function openFullCanonicalTrackSource({directory,report}={}){
  demand(path.isAbsolute(directory||''),'absolute directory required');
  const initial=await fs.lstat(directory);demand(initial.isDirectory()&&!initial.isSymbolicLink(),'unsafe source directory');
  const root=await fs.realpath(directory);const trackDirectory=await fs.lstat(path.join(root,'tracks'));demand(trackDirectory.isDirectory()&&!trackDirectory.isSymbolicLink(),'unsafe track directory');
- const read=async name=>{const p=path.join(root,name),s=await fs.lstat(p);demand(s.isFile()&&!s.isSymbolicLink()&&s.size<=8*1024*1024,'unsafe source file');return fs.readFile(p);};
+ const read=async name=>{const p=path.join(root,name),s=await fs.lstat(p);demand(s.isFile()&&!s.isSymbolicLink()&&s.size<=PRIVATE_NORMAL_BOARD_BYTES,'unsafe source file');return fs.readFile(p);};
  const saved=JSON.parse(await read('full-canonical-capture.json')),manifest=JSON.parse(await read('manifest.json'));
  demand(JSON.stringify(saved)===JSON.stringify(report),'report changed');
  const point=Date.parse(report?.fullScanReadPoint),f=manifest.fullCanonicalCapture;

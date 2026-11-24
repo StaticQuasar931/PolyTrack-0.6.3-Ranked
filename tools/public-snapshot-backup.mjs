@@ -1,3 +1,4 @@
+import {MAX_OVERALL_BOARDS} from './overall-board-limits.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {isFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
 import {hasCanonicalQuarantine} from './canonical-retained-track.mjs';
@@ -241,7 +242,7 @@ export function publicOverallBackup(value) {
   snapshot.trackSummaries = value.trackSummaries.map(row => ({...project(row, summaryFields),
     ...(row?.leader && typeof row.leader === 'object' ? {leader: project(row.leader, leaderFields)} : {})}));
   if (value.trackCatalog !== undefined) {
-    if (!Array.isArray(value.trackCatalog) || value.trackCatalog.length > 500) throw Error('Invalid public track catalog');
+    if (!Array.isArray(value.trackCatalog) || value.trackCatalog.length > MAX_OVERALL_BOARDS) throw Error('Invalid public track catalog');
     const seen = new Set();
     snapshot.trackCatalog = value.trackCatalog.map(row => {
       if (!TRACK_ID.test(row?.trackId || '') || seen.has(row.trackId) || !Number.isSafeInteger(row.updatedAt) || row.updatedAt < 0) throw Error('Invalid public track catalog entry');

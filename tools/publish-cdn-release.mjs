@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFile, appendFile, mkdtemp, mkdir, writeFile} from 'node:fs/promises';
@@ -40,7 +41,10 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     if (image.split('/').includes('..')) throw Error('Unsafe native image path');
     probes.add(image);
   }
-  const pack = JSON.parse(await read(directory + '/index.json'));
+  const fullIndexPath = directory + '/index.json';
+  const fullIndex = await read(fullIndexPath);
+  if (fullIndex.length > PRIVATE_SNAPSHOT_INDEX_BYTES) throw Error('Full snapshot index exceeds supported limit');
+  const pack = JSON.parse(fullIndex);
   const fast = JSON.parse(await read(directory + '/bootstrap-fast.json'));
   if (pack.generation !== Number(directory.slice('public-snapshots'.length))) throw Error('Snapshot generation mismatch');
   if (pack.schemaVersion !== 1 || pack.encoding !== 'gzip-xor-a7-v1' || !pack.files || typeof pack.files !== 'object' || Array.isArray(pack.files)) throw Error('Invalid full snapshot index');
@@ -63,6 +67,9 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     const shard = snapshotPayloadShard(entry.path,PAYLOAD_SHARD_COUNT);
     if (!payloadProbes.has(shard)) { probes.add(directory+'/'+entry.path); payloadProbes.add(shard); }
   }
+  // Keep the offline proof index intact; the CDN copy can derive the blob path from its digest.
+  const compactIndex = fullIndex.length >= 20000000 ? Buffer.from(JSON.stringify({...pack,compactIndexVersion:1,partial:false,
+    files:Object.fromEntries(Object.entries(pack.files).map(([logical,binding])=>[logical,[binding.sha256,binding.decodedBytes]]))})+'\n') : null;
   // The patch loads additional browser tools lazily. Include their literal paths
   // before trimming Node-only build/export/verification tools from the CDN tree.
   const patch = (await read('polytrack_062_patch.js')).toString('utf8');
@@ -89,7 +96,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
   }
   const files = [];
   for (const file of probes) {
-    const bytes = await read(file);
+    const bytes = file === fullIndexPath ? compactIndex || fullIndex : await read(file);
     if (!bytes.length || bytes.length >= 20000000) throw Error('Invalid release asset: ' + file);
     if (file.endsWith('/bootstrap-fast.json') && bytes.length > 2*1024*1024) throw Error('Fast snapshot index exceeds runtime limit');
     const hash = digest(bytes);
@@ -97,7 +104,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     files.push({path:file, sha256:hash});
   }
   if (files.length > MAX_RELEASE_PROBES) throw Error('Entry point requires review: too many release probes');
-  return {pointer:{schemaVersion:1, repository:REPOSITORY, commit, snapshotDirectory:directory, indexSha256:digest(index), publishedAt:now.toISOString()}, files, entryHtml:html};
+  return {pointer:{schemaVersion:1, repository:REPOSITORY, commit, snapshotDirectory:directory, indexSha256:digest(index), publishedAt:now.toISOString()}, files, entryHtml:html, ...(compactIndex?{compactIndex}: {})};
 }
 
 async function fetchBytes(url, fetchImpl, {retryAfterCapMs=120000}={}) {
@@ -259,6 +266,12 @@ export async function publishAssetTree(plan, git, {partition='all', entryHtml, s
     entry.hash=git(['hash-object','-w','--stdin'],{input:entryHtml}).trim();entry.bytes=Buffer.byteLength(entryHtml);
     if(!sha(entry.hash))throw Error('Invalid runtime entry blob');
   }
+  if(plan.compactIndex && belongs(plan.pointer.snapshotDirectory+'/index.json')) {
+    const entry=selected.find(file=>file.path===plan.pointer.snapshotDirectory+'/index.json');
+    if(!entry || plan.files.find(file=>file.path===entry.path)?.sha256!==digest(plan.compactIndex))throw Error('Unbound compact CDN index');
+    entry.hash=git(['hash-object','-w','--stdin'],{input:plan.compactIndex}).trim();entry.bytes=plan.compactIndex.length;
+    if(!sha(entry.hash))throw Error('Invalid compact CDN index blob');
+  }
   assertCdnAssetSizes(selected);
   const names = new Set(selected.map(entry=>entry.path));
   if (plan.files.some(file=>belongs(file.path) && !names.has(file.path))) throw Error('Compact package excludes a required boot asset');
@@ -397,7 +410,7 @@ export async function refreshReleasePointer(expected, {fetchImpl=fetch, sleep=pa
 }
 
 export async function publishRelease({root=process.cwd(), branch=process.env.DEFAULT_BRANCH, repository=process.env.GITHUB_REPOSITORY,
-  git=(args, options={}) => execFileSync('git', args, {cwd:root, encoding:'utf8', maxBuffer:20000000, ...options}),
+  git=(args, options={}) => execFileSync('git', args, {cwd:root, encoding:'utf8', maxBuffer:32*1024*1024, ...options}),
   check=checkReleaseFiles, refresh=refreshReleasePointer, now=new Date(), refreshOnly=false, refreshOptions={}}={}) {
   if (repository !== REPOSITORY || branch !== 'main') throw Error('Only the canonical main branch can publish releases');
   git(['fetch','--no-tags','origin','refs/heads/main']);

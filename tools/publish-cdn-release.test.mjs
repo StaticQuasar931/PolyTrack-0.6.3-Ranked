@@ -703,3 +703,15 @@ test('historical CDN source packages the tracked JSON standings preview, not a p
  assert.ok(assets.has('events/standings-preview.json'));
  assert.equal(assets.has('events/standings-preview.js'),false);
 });
+
+test('CDN compresses oversized full index bindings without changing offline source bytes',async()=>{
+  const f=fixture(), key='public-snapshots1/index.json', source=f.files.get(key);
+  const large=Buffer.alloc(20500000,32);source.copy(large);f.files.set(key,large);
+  const plan=await releasePlan({commit:sha,...f});
+  const compact=JSON.parse(plan.compactIndex);
+  assert.equal(compact.partial,false);assert.equal(compact.compactIndexVersion,1);
+  assert.deepEqual(compact.files,Object.fromEntries(Object.entries(JSON.parse(source).files)
+    .map(([name,{sha256,decodedBytes}])=>[name,[sha256,decodedBytes]])));
+  assert.equal(plan.files.find(file=>file.path===key).sha256,hash(plan.compactIndex));
+  assert.equal(f.files.get(key),large);
+});

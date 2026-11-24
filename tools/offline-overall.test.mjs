@@ -25,6 +25,25 @@ function fixture() {
 }
 const overall = result => result.files.get('overall.json');
 
+test('555 exact boards survive offline scoring and both projection encodings',async()=>{
+ const f=fixture(),seed=f.tracks[0];
+ for(let i=f.tracks.length;i<555;i++){
+   const trackId=(10000+i).toString(16).padStart(64,'0');
+   const entries=rankTrustedTrackEntries(seed.entries.map(row=>({...row,trackId})),trackId);
+   f.tracks.push({...seed,trackId,entries});
+ }
+ f.expectedTrackIds=f.tracks.map(row=>row.trackId);
+ const result=await buildOfflineOverall(f),rankings=overall(result);
+ assert.equal(rankings.trackCatalog.length,555);
+ assert.equal(result.report.sourceRows,2775);
+ const bundle=result.files.get('projection-source.json'),results=result.files.get('overall-results.json');
+ const decoded=decodeOverallProjectionBundle(bundle,{overall:rankings,generation:'test-snapshot'});
+ assert.equal(decoded.length,555);
+ assert.equal((await decodeProjectionResults(results)).resultBoardCount,555);
+ assert.equal(new Set(decoded.map(row=>row.trackId)).size,555);
+});
+
+
 test('materialized authenticated pagination reaches the offline scorer with exact counts', async () => {
   const f = populationFixture(501), expected = await buildOfflineOverall(f);
   const board = f.tracks[0];

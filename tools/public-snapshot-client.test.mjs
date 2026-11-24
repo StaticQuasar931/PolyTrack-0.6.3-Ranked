@@ -922,3 +922,19 @@ test('unpacked refresh uses the adopted directory, including reads started befor
     '/public-snapshots2/profiles/'+id+'.json'
   ]);
 });
+
+test('CDN full compact fallback preserves payload hash and rejects a different generation',async()=>{
+  const {record,bytes}=await packedEntry({recording:'saved',frames:1,updatedAt:100}), logical='recordings/42.json';
+  for(const generation of [77,78]){
+    const urls=[];
+    const read=createPublicSnapshotReader({packed:true,bootstrap:false,baseUrl:'https://offline.test/public-snapshots77/',
+      byteCache:{open:async()=>null},fetchImpl:async input=>{
+        const asset=new URL(input).pathname.split('/').at(-1);urls.push(asset);
+        if(asset==='index.json')return Response.json({schemaVersion:1,generation,encoding:'gzip-xor-a7-v1',
+          compactIndexVersion:1,partial:false,files:{[logical]:[record.sha256,record.decodedBytes]}});
+        assert.equal(asset,record.path);return new Response(bytes);
+      }});
+    if(generation===77){assert.equal((await read('recording',42)).recording,'saved');assert.deepEqual(urls,['index.json',record.path]);}
+    else{assert.equal(await read('recording',42),null);assert(urls.every(url=>url==='index.json'));}
+  }
+});

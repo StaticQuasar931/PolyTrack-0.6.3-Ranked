@@ -725,7 +725,7 @@ test('private Overall reader compatibility has a fixed 32 MiB cap with zero stag
 
 test('private Overall reader compatibility preserves all ordinary capacity limits', async t => {
   assert.deepEqual(FULL_CANONICAL_LIMITS, {documents:35000, page:100, catchupMemoryBytes:256*1024*1024,
-    memoryBytes:64*1024*1024, normalBoardBytes:4*1024*1024, fileBytes:2*1024*1024});
+    memoryBytes:64*1024*1024, normalBoardBytes:8*1024*1024, fileBytes:2*1024*1024});
   for (const [relative, limit, rows] of [['manifest.json',2,[]], [`tracks/${track}.json`,4,[]],
     [`canonical/${track}/${id(1)}.json`,2,[source(1)]]]) {
     const f = await fixture(t), file = path.join(f.root, relative);
@@ -1014,7 +1014,7 @@ test('an 8000-row prior inventory fits the fixed accounting cap without retainin
   assert.equal(calls, 1); assert.equal((await fs.readdir(f.root)).length, 1);
 });
 
-test('reranking cannot emit a normal board above the bounded 4 MiB board cap', async t => {
+test('reranking cannot emit a normal board above the bounded 8 MiB private board cap', async t => {
   const f = await fixture(t), cosmetics = Object.fromEntries(['theme', 'accent', 'finish', 'plate', 'edge', 'stageTint',
     'stage', 'stageEffect', 'stripe', 'emblem', 'emblem2', 'emblem3', 'emblemBackdrop', 'nameFont', 'nameSize',
     'nameWeight', 'nameColor', 'baseSecondary', 'title', 'badge', 'favoriteTrackId', 'overridePodium'].map(key => [key, 'x'.repeat(256)]));
@@ -1026,7 +1026,7 @@ test('reranking cannot emit a normal board above the bounded 4 MiB board cap', a
     entries.push(row);
   }
   await f.put(`tracks/${track}.json`, {trackId: track, updatedAt: 123, entries});
-  const before = await tree(f.root), report = await f.run([], {documentLimit:20000});
+  const before = await tree(f.root), report = await f.run([], {documentLimit:35000});
   assert.equal(report.capDeferred, true); assert.equal(report.reason, 'output_cap');
   assert.equal(report.complete, false); assert.deepEqual(await tree(f.root), before);
 });
@@ -1092,11 +1092,11 @@ test('approved 35000-row catch-up imports a full 32366-row field under its expli
  const manifest=await f.read('manifest.json');assert.equal(manifest.fullCanonicalCapture.sourceRows,32366);assert.equal(manifest.fullCanonicalCapture.complete,true);assert.equal(manifest.fullCanonicalCapture.imported,true);assert.ok(result.peakAccountedBytes<=FULL_CANONICAL_LIMITS.catchupMemoryBytes);
 });
 
-test('normal board above 2 MiB is retained under the 4 MiB board-only limit without granting verification',async t=>{
- const f=await fixture(t),rows=Array.from({length:2100},(_,i)=>saved(source(i+1,{name:'n'.repeat(256),carStyle:'a'.repeat(256),countryCode:'x'.repeat(256)})));
- await baseline(f,rows);const result=await f.run([],{checkpointDirectory:f.checkpoint});
- assert.equal(result.complete,true);assert.equal(result.missingPriorCount,2100);const file=path.join(f.root,'tracks',track+'.json'),bytes=await fs.readFile(file);assert.ok(bytes.length>2*1024*1024&&bytes.length<=4*1024*1024);const value=JSON.parse(bytes);assert.equal(value.entries.length,2100);assert.ok(value.entries.every(row=>row.runVerified===false));
- const loaded=await loadCapturedNativeJobs({directory:f.root});assert.equal(loaded.jobs.length,0);assert.ok(loaded.coverage.gaps.length>=2100);
+test('normal board above 4 MiB is retained under the 8 MiB private cap without granting verification',async t=>{
+ const f=await fixture(t),rows=Array.from({length:4000},(_,i)=>saved(source(i+1,{name:'n'.repeat(256),carStyle:'a'.repeat(256),countryCode:'x'.repeat(256)})));
+ await baseline(f,rows);const result=await f.run([],{checkpointDirectory:f.checkpoint,documentLimit:35000});
+ assert.equal(result.complete,true);assert.equal(result.missingPriorCount,4000);const file=path.join(f.root,'tracks',track+'.json'),bytes=await fs.readFile(file);assert.ok(bytes.length>4*1024*1024&&bytes.length<=FULL_CANONICAL_LIMITS.normalBoardBytes);const value=JSON.parse(bytes);assert.equal(value.entries.length,4000);assert.ok(value.entries.every(row=>row.runVerified===false));
+ const loaded=await loadCapturedNativeJobs({directory:f.root});assert.equal(loaded.jobs.length,0);assert.ok(loaded.coverage.gaps.length>=4000);
 });
 
 test('new canonical track boards carry current scoring metadata without changing verification',async t=>{

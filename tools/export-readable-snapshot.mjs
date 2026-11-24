@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -92,8 +93,7 @@ export async function exportReadableSnapshot({ root = ROOT, sourceDirectory, out
   const output = path.resolve(outputDirectory);
   if (source === output || output.startsWith(`${source}${path.sep}`)) throw new Error('Output directory must be outside the encoded snapshot source');
   const indexPath = path.join(source, 'index.json');
-  const indexBytes = await fs.readFile(indexPath);
-  if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError('Snapshot index exceeds file limit');
+  const indexBytes = await readPrivateSnapshotIndex(path.resolve(indexPath));
   const index = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(indexBytes));
   if (index.schemaVersion !== 1 || index.encoding !== 'gzip-xor-a7-v1' || !index.files || typeof index.files !== 'object' || Array.isArray(index.files)) {
     throw new Error('Unsupported or invalid snapshot index');

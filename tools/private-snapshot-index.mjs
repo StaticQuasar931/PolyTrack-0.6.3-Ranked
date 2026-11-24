@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-// Private package metadata only. Payload, public wire and ordinary JSON caps do not change.
-export const PRIVATE_SNAPSHOT_INDEX_BYTES = 20 * 1024 * 1024;
+// Only full package indexes use this limit. Payloads and compact bootstrap are unchanged.
+export const PRIVATE_SNAPSHOT_INDEX_BYTES = 24 * 1024 * 1024;
 export async function readPrivateSnapshotIndex(file) {
   if (!path.isAbsolute(file || '') || path.basename(file) !== 'index.json') throw Error('Private snapshot index path required');
   const before = await fs.lstat(file);
