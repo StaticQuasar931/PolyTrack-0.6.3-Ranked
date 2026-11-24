@@ -518,7 +518,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       manifest.nativeVerificationLedger={...manifest.nativeVerificationLedger,manifestHash:verification.ledgerManifestHash,policyFingerprint:nativePolicyFingerprint(publicationPolicy)};
       await json(candidate,'manifest.json',manifest);
     }
-    const overall=await rebuild({directory:candidate,now});await buildProfiles(candidate);
+    const overall=await rebuild({directory:candidate,now});await buildProfiles(candidate,{retainPublishedEventTotals:events.retainedPublishedTotals===true});
     if(publishedRetention)await assertRetention(verification.ledger);
     demand(events.ready!==false,'event compilation incomplete');
     // Confirm local root authority did not change while the private phase ran.

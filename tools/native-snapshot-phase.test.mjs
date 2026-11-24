@@ -338,6 +338,7 @@ for(const rolling of [false,true])test('normal-only preserves incompatible event
  try{
   assert.equal(reviewed,4);assert.equal(f.calls.flat().length,1);assert.equal(f.calls[0][0].lane,'normal');
   assert.equal(verified.receipt.counts.known,1);const compiled=await verified.compile();
+  assert.equal(compiled.events.retainedPublishedTotals===true,!rolling);
   const after=await inventory(f.directory);
   for(const name of ['events/day1.json','event-replays/day1/'+account+'.json','event-playbacks/day1/'+pendingRun+'.json'])assert.equal(after[name],before[name],name);
   if(!rolling){assert.equal(after['event-totals.json'],before['event-totals.json']);assert.equal(after['events/permanent-rolling-hills.json'],before['events/permanent-rolling-hills.json']);}

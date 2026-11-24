@@ -11,7 +11,7 @@ async function optional(file){try{return JSON.parse(await fs.readFile(file,'utf8
 async function names(dir){try{return await fs.readdir(dir);}catch(error){if(error.code==='ENOENT')return [];throw error;}}
 
 // Derive compact public per-racer indexes from already captured files: no cloud reads.
-export async function buildProfileSnapshotResults(directory){
+export async function buildProfileSnapshotResults(directory,{retainPublishedEventTotals=false}={}){
   const racers=new Map();
   const overall=await optional(path.join(directory,'overall.json'));
   const manifest=await optional(path.join(directory,'manifest.json'));
@@ -123,7 +123,8 @@ export async function buildProfileSnapshotResults(directory){
   const cosmetics=JSON.stringify({updatedAt:cosmeticUpdatedAt,entries:cosmeticEntries})+'\n';
   if(Buffer.byteLength(cosmetics)>2*1024*1024)throw Error('Snapshot cosmetic directory exceeds client limit');
   await fs.writeFile(path.join(directory,'cosmetic-directory.json'),cosmetics);
-  const totalsPath=path.join(directory,'event-totals.json'),totals=await optional(totalsPath);
+  const totalsPath=path.join(directory,'event-totals.json');
+  const totals=retainPublishedEventTotals?null:await optional(totalsPath);
   if(totals&&Array.isArray(totals.entries)){
     const enriched={...totals,entries:totals.entries.map(row=>{
       const identity=identities.get(row.accountId||row.userId);if(!identity)return row;

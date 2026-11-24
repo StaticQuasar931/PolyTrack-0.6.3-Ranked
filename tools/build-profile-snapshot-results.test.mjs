@@ -101,6 +101,9 @@ test('event-only identity stays public and never becomes a normal finish or Over
   await fs.mkdir(path.join(root,'events'));
   await fs.writeFile(path.join(root,'events','daily-test.json'),JSON.stringify({updatedAt:999,entries:[{accountId:eventAccount,name:'Event racer',carStyle:'event-car',identityUpdatedAt:250,rank:1,rp:90,events:2,ownerUid:'private',replay:'private'}]}));
   await fs.writeFile(path.join(root,'event-totals.json'),JSON.stringify({updatedAt:100,entries:[{accountId:eventAccount,name:'Older name',rank:7,rp:123,events:2}]}));
+  const totalsPath=path.join(root,'event-totals.json'),original=await fs.readFile(totalsPath,'utf8');
+  await buildProfileSnapshotResults(root,{retainPublishedEventTotals:true});
+  assert.equal(await fs.readFile(totalsPath,'utf8'),original);
   await buildProfileSnapshotResults(root);
   const directory=JSON.parse(await fs.readFile(path.join(root,'racer-directory.json')));
   const identity=directory.entries[eventAccount];

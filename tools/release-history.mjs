@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 481,
+    "number": 483,
     "version": "0.6.3",
-    "revision": 407,
+    "revision": 408,
     "notes": [
-      "Your saved Workshop changes show up on your car previews right away, even before the next rankings update."
+      "Improved Summer One replay verification so it can update without changing other event standings."
     ]
   },
   "entries": [
+    {
+      "number": 481,
+      "title": "Show your saved Workshop styles immediately",
+      "commit": "f88a0d1c8cca6157140f92d713490eba5a3ad244",
+      "committedAt": "2026-11-23T01:57:56.000Z",
+      "notes": [
+        "Your saved Workshop changes show up on your car previews right away, even before the next rankings update."
+      ]
+    },
     {
       "number": 480,
       "title": "Show saved Workshop styles on ranked car previews",
@@ -175,16 +184,6 @@ const historyData = {
       "commit": "12635079b96deee2611598acac81d6a39e63df41",
       "committedAt": "2026-11-22T20:48:11.000Z",
       "notes": []
-    },
-    {
-      "number": 457,
-      "title": "Refresh Kodub rollover and compact snapshot history",
-      "commit": "b1d639c572cd6fb62e00235362c761576de69803",
-      "committedAt": "2026-11-22T20:33:43.000Z",
-      "notes": [
-        "The Kodub weekly card can switch tracks and artwork without reloading, even before the static files catch up.",
-        "Official and Community podium rankings show the actual top podium finishes in that scope."
-      ]
     }
   ],
   "coverage": {
