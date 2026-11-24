@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 483,
+  "number": 484,
   "version": "0.6.3",
-  "revision": 408,
+  "revision": 409,
   "notes": [
-    "Improved Summer One replay verification so it can update without changing other event standings."
+    "Rankings show more rows in landscape. The More button on compact rankings now explains what it opens to screen readers.",
+    "Track previews can warm again after a temporary failure, without hammering the connection."
   ],
-  "preparedAt": "2026-11-24T05:14:37.671Z",
-  "committedAt": "2026-11-24T05:14:39.000Z"
+  "preparedAt": "2026-11-24T05:25:19.866Z",
+  "committedAt": "2026-11-24T05:25:21.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
