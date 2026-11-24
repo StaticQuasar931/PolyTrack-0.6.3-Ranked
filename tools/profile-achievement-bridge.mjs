@@ -1,3 +1,4 @@
+import {trackShortcutTutorialComplete} from './track-shortcut-progress.mjs';
 let serial = 0;
 const hubIcon = name => {
   const paths = {
@@ -19,7 +20,7 @@ const hubIcon = name => {
  * and track navigation/modal closure. Mount does not invoke either adapter.
  * Optional storage defaults safely to this document's localStorage; null disables.
  */
-export function mountProfileAchievements(content, {accountId,confirmed,local,cosmetics,onTryCosmetic,onNavigate,getRecommendations,onRecommendedTrack,revision,storage,model,buildModel,launcher = true} = {}) {
+export function mountProfileAchievements(content, {accountId,confirmed,local,cosmetics,onTryCosmetic,onNavigate,getRecommendations,onRecommendedTrack,revision,storage,model,buildModel,showShortcutTutorial = false,launcher = true} = {}) {
   if (!content?.ownerDocument || !content.isConnected) {
     const noop = () => {}; noop.open = () => false; noop.close = noop; return noop;
   }
@@ -169,7 +170,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
     journalHost.setAttribute('aria-busy','true'); journalHost.textContent = 'Loading achievements...';
     pending = import(moduleURL.href).then(api => {
       if (!current() || !dialog.open) return;
-      journalHost.innerHTML = api.renderAchievementJournal({progress:{confirmed,local},cosmetics,model,buildModel,embedded:true});
+      journalHost.innerHTML = api.renderAchievementJournal({progress:{confirmed,local},cosmetics,model,buildModel,embedded:true,shortcutTutorial:showShortcutTutorial?trackShortcutTutorialComplete(preferenceStorage):undefined});
       unbind = api.bindAchievementJournal(journalHost,{onTryCosmetic:viewReward,onNavigate:navigate,onClose:closeHub,storage:preferenceStorage,getRecommendations,onRecommendedTrack});
     }).catch(() => {
       if (current() && dialog.open) journalHost.textContent = 'Achievements could not load. Close and reopen to try again.';

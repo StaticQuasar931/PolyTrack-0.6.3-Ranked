@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 485,
+  "number": 486,
   "version": "0.6.3",
-  "revision": 410,
+  "revision": 411,
   "notes": [
-    "Sort Track Breakdown by Top % to compare your best finishes across fields of different sizes."
+    "Find Community Tracks by typing a name or RHR, then press Enter. Use 1-9 to open a track, ? to pick from this list, or ! to pick from all loaded tracks.",
+    "Switch Community versions with Shift+Left or Shift+Right. Discovery has a quick keyboard tutorial."
   ],
-  "preparedAt": "2026-11-24T06:01:10.051Z",
-  "committedAt": "2026-11-24T06:04:46.000Z"
+  "preparedAt": "2026-11-24T06:20:09.755Z",
+  "committedAt": "2026-11-24T06:23:36.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

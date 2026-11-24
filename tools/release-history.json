@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 485,
+    "number": 486,
     "version": "0.6.3",
-    "revision": 410,
+    "revision": 411,
     "notes": [
-      "Sort Track Breakdown by Top % to compare your best finishes across fields of different sizes."
+      "Find Community Tracks by typing a name or RHR, then press Enter. Use 1-9 to open a track, ? to pick from this list, or ! to pick from all loaded tracks.",
+      "Switch Community versions with Shift+Left or Shift+Right. Discovery has a quick keyboard tutorial."
     ]
   },
   "entries": [
+    {
+      "number": 485,
+      "title": "Sort track results by Top %",
+      "commit": "118a8ad2f8384d6264f8bce8af12c3a74feb29c0",
+      "committedAt": "2026-11-24T06:04:46.000Z",
+      "notes": [
+        "Sort Track Breakdown by Top % to compare your best finishes across fields of different sizes."
+      ]
+    },
     {
       "number": 484,
       "title": "Improve landscape rankings and track previews",
@@ -181,13 +191,6 @@
       "notes": [
         "Your saved Workshop paint and stickers now follow your car into personal replays, including older event replays."
       ]
-    },
-    {
-      "number": null,
-      "title": "Quarantine only changed recordings in routine snapshots",
-      "commit": "34bdf455af31be91c6fe239c35f314b29f597495",
-      "committedAt": "2026-11-22T21:10:19.000Z",
-      "notes": []
     }
   ],
   "coverage": {

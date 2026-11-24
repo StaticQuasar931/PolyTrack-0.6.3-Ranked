@@ -170,6 +170,7 @@ function rewardPreview(reward,index) {
 }
 
 function detail(item) {
+  if(item.source==='tutorial')return '<div class="aj-inspector-info"><p class="aj-kicker">'+(item.earned?'Completed on this device':'Quick tutorial')+'</p><h3>Find a track with your keyboard</h3><p>Open Play, then Community Tracks. Type RHR or a track name and press Enter to open the track preview.</p><p>Try 1-9 for a track in the current list, ? for a random track here, and ! for a random loaded track.</p><p class="aj-personal-note">Device achievement only. No Style Coins or cosmetic reward.</p></div>';
   if(isStyleCoinAchievement(item))return '<div class="aj-inspector-info"><p class="aj-kicker">'+(item.eligible?'Goal reached':item.value===null?'Awaiting server progress':'In progress')+'</p><h3>'+esc(item.goal)+'</h3><p class="aj-detail-rewardtext">'+item.reward.amount+' Style Coins</p><p class="aj-goal-count">'+(item.value===null?'Awaiting server progress; confirmed completion count not supplied':'Confirmed completion count: '+item.value+'<br>Goal: '+item.target)+'</p><p>'+esc(item.description)+'</p></div><div class="aj-inspector-rewards"><p>Use Sync wallet in the Shop to collect eligible rewards. Reaching a goal does not mean the coins have already been credited.</p><button type="button" class="aj-explore" data-aj-navigate="shop">Open Shop</button></div>';
 
   const coinBonus=item.coinReward?'<div class="aj-coin-bonus">'+rewardMark('currency')+'<strong>'+item.coinReward.amount+' Style Coins</strong><span>'+(item.coinReward.journalIds.length>1?'Shared title/style bonus, paid once. ':'')+'Sync to collect your coins. Past goals still count.</span><button type="button" data-aj-navigate="shop">Check rewards in Shop</button></div>':'';
@@ -185,8 +186,15 @@ let serial = 0;
  */
 export function renderAchievementJournal(options = {}) {
   const supplied=options.model ?? options.buildModel?.(options) ?? buildAchievementJournalModel(options);
+  const tutorial=typeof options.shortcutTutorial==='boolean'
+    ? {id:'tutorial:community-search',family:'discovery',metric:'shortcutTutorial',target:1,value:Number(options.shortcutTutorial),ratio:Number(options.shortcutTutorial),earned:options.shortcutTutorial,rewards:[],source:'tutorial',goal:'Find a track with your keyboard'}
+    : null;
   const rewarded=supplied.milestones.filter(item=>item.metric!=='beta'&&item.source!=='local'&&(item.rewards.length>0||isStyleCoinAchievement(item)));
-  const model={...supplied,milestones:rewarded,branches:supplied.branches.map(branch=>({...branch,milestones:rewarded.filter(item=>item.family===branch.id)})).filter(branch=>branch.milestones.length),counts:{earned:rewarded.filter(item=>item.earned).length,total:rewarded.length,confirmed:rewarded.filter(item=>item.earned&&isCosmeticGoal(item)).length,local:0}};
+  if(tutorial)rewarded.push(tutorial);
+  const branches=tutorial&&!supplied.branches.some(branch=>branch.id==='discovery')
+    ? [...supplied.branches,{id:'discovery',label:labels.discovery}] : supplied.branches;
+  const nextIds=tutorial&&!tutorial.earned?[...supplied.nextIds,tutorial.id]:supplied.nextIds;
+  const model={...supplied,nextIds,milestones:rewarded,branches:branches.map(branch=>({...branch,milestones:rewarded.filter(item=>item.family===branch.id)})).filter(branch=>branch.milestones.length),counts:{earned:rewarded.filter(item=>item.earned).length,total:rewarded.length,confirmed:rewarded.filter(item=>item.earned&&isCosmeticGoal(item)).length,local:0}};
   const filter = filters.includes(options.filter) ? options.filter : 'all';
   const sort=sortModes.includes(options.sort)?options.sort:'target';
   const prefix = String(options.idPrefix ?? `aj-${++serial}`);

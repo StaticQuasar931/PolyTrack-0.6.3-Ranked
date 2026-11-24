@@ -47,6 +47,98 @@ test('official no-match fallback never clears the query or relaxes other tabs, i
   }finally{await browser.close();await server.close();}
 });
 
+test('Community version shortcuts wrap, respect text entry and restore tab focus',async()=>{
+  const server=await startResponsiveServer(),browser=await chromium.launch({headless:true});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',route=>new URL(route.request().url()).origin===server.url?route.continue():route.abort());
+    await page.goto(server.url+'/tools/search-text.mjs');
+    await page.setContent('<div class="track-selection-ui"><div class="search-bar-container"><input></div><div class="tracks-container open"><div class="community-track-versions"><button class="selected">Newest</button><button>Older</button><button disabled>Unavailable</button></div></div></div>');
+    await page.evaluate(async origin=>{
+      const buttons=[...document.querySelectorAll('.community-track-versions button')];
+      for(const button of buttons)button.onclick=()=>buttons.forEach(other=>other.classList.toggle('selected',other===button));
+      const {enhanceNativeTrackSearch}=await import(origin+'/tools/native-track-search.mjs');
+      window.versionEnhancer=enhanceNativeTrackSearch({document});
+    },server.url);
+    const selected=page.locator('.community-track-versions .selected');
+    await page.getByRole('button',{name:'Newest'}).focus();
+    await page.keyboard.press('Shift+ArrowLeft');
+    assert.equal(await selected.textContent(),'Older');
+    assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Older');
+    await page.keyboard.press('Shift+ArrowRight');
+    assert.equal(await selected.textContent(),'Newest');
+    await page.locator('input').focus();
+    await page.keyboard.press('Shift+ArrowRight');
+    assert.equal(await selected.textContent(),'Newest');
+    await page.evaluate(()=>window.versionEnhancer.dispose());
+    await page.getByRole('button',{name:'Newest'}).focus();
+    await page.keyboard.press('Shift+ArrowRight');
+    assert.equal(await selected.textContent(),'Newest');
+  }finally{await browser.close();await server.close();}
+});
+
+test('Community type-to-find opens only exact matches and knows the RHR alias',async()=>{
+  const server=await startResponsiveServer(),browser=await chromium.launch({headless:true});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',route=>new URL(route.request().url()).origin===server.url?route.continue():route.abort());
+    await page.goto(server.url+'/tools/search-text.mjs');
+    await page.setContent('<div class="track-selection-ui"><div class="search-bar-container"><input></div><div class="tracks-container open"><div class="community-track-versions"><button class="selected">Current</button></div><section><article class="track"><button><span class="track-title">Phantom Imperium</span></button></article><article class="track sq-permanent-track"><button><span class="track-title">Rolling Hills Racer</span></button></article></section></div></div>');
+    await page.evaluate(async origin=>{
+      window.openedTracks=[];
+      for(const button of document.querySelectorAll('.track button'))button.onclick=()=>window.openedTracks.push(button.textContent);
+      const {enhanceNativeTrackSearch}=await import(origin+'/tools/native-track-search.mjs');
+      enhanceNativeTrackSearch({document});
+    },server.url);
+    const input=page.locator('input');
+    const opened=()=>page.evaluate(()=>window.openedTracks);
+    await page.getByRole('button',{name:'Current'}).focus();
+    await page.keyboard.press('Shift+P');
+    assert.equal(await input.inputValue(),'P');
+    await page.keyboard.type('hantom');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await opened(),[]);
+    await page.keyboard.type(' Imperium');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await opened(),['Phantom Imperium']);
+    await page.getByRole('button',{name:'Current'}).focus();
+    await page.keyboard.press('/');
+    await page.keyboard.type('RHR');
+    assert.equal(await input.inputValue(),'RHR');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await opened(),['Phantom Imperium','Rolling Hills Racer']);
+    assert.equal(await page.evaluate(()=>localStorage.getItem('polytrack:shortcut-tutorial:community-search:v1')),null,'click without a preview does not complete the tutorial');
+  }finally{await browser.close();await server.close();}
+});
+
+test('numbers and random shortcuts use the right list and do not override text entry',async()=>{
+  const server=await startResponsiveServer(),browser=await chromium.launch({headless:true});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',route=>new URL(route.request().url()).origin===server.url?route.continue():route.abort());
+    await page.goto(server.url+'/tools/search-text.mjs');
+    await page.setContent('<div class="track-selection-ui"><div class="search-bar-container"><input></div><div class="tracks-container" style="display:none"><article class="track"><button>Official</button></article></div><div class="tracks-container open"><div class="community-track-versions"><button class="selected">Current</button></div><article class="track"><button>First</button></article><article class="track" hidden><button>Hidden</button></article><article class="track"><button>Second</button></article></div></div>');
+    await page.evaluate(async origin=>{
+      window.openedTracks=[];
+      Math.random=()=>0;
+      for(const button of document.querySelectorAll('.track button'))button.onclick=()=>window.openedTracks.push(button.textContent);
+      const {enhanceNativeTrackSearch}=await import(origin+'/tools/native-track-search.mjs');
+      enhanceNativeTrackSearch({document});
+    },server.url);
+    const current=page.getByRole('button',{name:'Current'});
+    await current.focus();
+    await page.keyboard.press('2');
+    await page.keyboard.press('9');
+    await page.keyboard.press('Shift+Slash');
+    await page.keyboard.press('Shift+Digit1');
+    assert.deepEqual(await page.evaluate(()=>window.openedTracks),['Second','First','Official']);
+    await page.locator('input').focus();
+    await page.keyboard.press('2');
+    assert.equal(await page.locator('input').inputValue(),'2');
+    assert.deepEqual(await page.evaluate(()=>window.openedTracks),['Second','First','Official']);
+  }finally{await browser.close();await server.close();}
+});
+
 test('real native track selection preserves community search when visiting Official',{timeout:120000},async()=>{
   const server=await startResponsiveServer(),browser=await chromium.launch({headless:true});
   try{
@@ -63,7 +155,7 @@ test('real native track selection preserves community search when visiting Offic
     await page.getByRole('button',{name:'Play',exact:true}).click();
     const menu=page.locator('.track-selection-ui:not(.hidden)'),input=menu.locator('.search-bar-container input');
     await input.waitFor({state:'visible'});
-    await page.waitForFunction(()=>document.querySelector('.track-selection-ui .search-bar-container input')?.getAttribute('aria-label')?.includes('plain-text'));
+    await page.waitForFunction(()=>document.querySelector('.track-selection-ui .search-bar-container input')?.getAttribute('aria-label')==='Search tracks or authors');
     const official=menu.locator('.tracks-container').nth(0),community=menu.locator('.tracks-container').nth(1);
     const communityTiles=community.locator('.track:not(.sq-kodub-weekly):not(.sq-permanent-track):has(img.thumbnail[src*="tracks/community/thumbnails/"])');
     await menu.getByRole('button',{name:'Community tracks',exact:true}).click();
@@ -79,6 +171,26 @@ test('real native track selection preserves community search when visiting Offic
     assert.equal(await communityTiles.filter({visible:true}).count(),0);
     await menu.getByRole('button',{name:'Official tracks',exact:true}).click();assert.ok(await official.locator('.track:visible').count()>=17);
     await menu.getByRole('button',{name:'Community tracks',exact:true}).click();assert.equal(await communityTiles.filter({visible:true}).count(),0);
+    await community.locator('.sq-permanent-track').waitFor({state:'attached',timeout:30000});
+    await menu.getByRole('button',{name:'Community tracks',exact:true}).focus();
+    await page.keyboard.press('/');
+    await page.keyboard.type('RHR');
+    await community.locator('.sq-permanent-track').waitFor({state:'visible'});
+    await page.keyboard.press('Enter');
+    const preview=page.locator('.track-info-ui:not(.hidden)');
+    await preview.waitFor({state:'visible'});
+    assert.match(await preview.innerText(),/Rolling Hills Racer/i);
+    await page.waitForFunction(()=>localStorage.getItem('polytrack:shortcut-tutorial:community-search:v1')==='1');
+    const tutorial=await page.evaluate(async origin=>{
+      const {renderAchievementJournal}=await import(origin+'/tools/achievement-journal.mjs');
+      const {trackShortcutTutorialComplete}=await import(origin+'/tools/track-shortcut-progress.mjs');
+      const scratch=document.createElement('div');
+      scratch.innerHTML=renderAchievementJournal({shortcutTutorial:trackShortcutTutorialComplete(localStorage),selectedId:'tutorial:community-search'});
+      return {earned:scratch.querySelector('[data-aj-node="tutorial:community-search"]')?.dataset.ajEarned,
+        detail:scratch.querySelector('[data-aj-detail]').textContent};
+    },server.url);
+    assert.equal(tutorial.earned,'true');
+    assert.match(tutorial.detail,/No Style Coins or cosmetic reward/);
     assert.ok(requests.slice(before).every(url=>!url.includes('firestore.googleapis.com')&&!url.includes('.workers.dev')));
     const audit=await page.evaluate(()=>window.__ptNativeRankedAudit);assert.deepEqual(audit.errors,[]);assert.deepEqual(audit.rejections,[]);
   }finally{await browser.close();await server.close();}
