@@ -619,7 +619,7 @@ html body #overallProfilePopup .profile-track-head,
 html body #overallProfilePopup .profile-track-row { grid-template-columns:84px minmax(0,1fr) 110px 132px 112px 82px !important; }
 html body #overallProfilePopup .profile-track-head button { min-width:0; text-align:center; }
 html body #overallProfilePopup .profile-track-row > .profile-track-percent { color:#b4e5ff; font-variant-numeric:tabular-nums; text-align:right; }
-@media (max-width: 760px) {
+@media (max-width: 1000px) {
   html body #overallProfilePopup .profile-track-head { grid-template-columns:repeat(6,minmax(0,1fr)) !important; gap:2px; padding:4px !important; }
   html body #overallProfilePopup .profile-track-head button { padding-inline:2px; font-size:clamp(9px,2.6vw,13px) !important; }
   html body #overallProfilePopup .profile-track-row { grid-template-columns:72px minmax(0,1fr) minmax(0,1fr) !important; grid-template-areas:"image name name" "weight result time" "weight percent time" !important; }

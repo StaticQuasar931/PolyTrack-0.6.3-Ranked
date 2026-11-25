@@ -1,16 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 490,
+    "number": 491,
     "version": "0.6.3",
-    "revision": 413,
+    "revision": 414,
     "notes": [
-      "Sort profile results by Top % from the same row as the other sort options.",
-      "Active playtime now shows a shorter hover label with the total in hours.",
-      "Replay verification can continue when a different track reaches its comparison limit."
+      "Track Breakdown keeps all six sorting options in one row and aligns results on tablets and Chromebooks."
     ]
   },
   "entries": [
+    {
+      "number": 490,
+      "title": "Verify saved replays by track",
+      "commit": "7b5eec80a8ba1b134d68f690a82346b89ece7ea5",
+      "committedAt": "2026-11-25T22:35:28.000Z",
+      "notes": [
+        "Sort profile results by Top % from the same row as the other sort options.",
+        "Active playtime now shows a shorter hover label with the total in hours.",
+        "Replay verification can continue when a different track reaches its comparison limit."
+      ]
+    },
     {
       "number": 488,
       "title": "Refresh ranked leaderboards",
@@ -182,15 +191,6 @@
       "committedAt": "2026-11-22T22:10:08.000Z",
       "notes": [
         "New rankings can publish while unavailable replay previews wait for their own checks."
-      ]
-    },
-    {
-      "number": 465,
-      "title": "Keep published ranking boards during refresh",
-      "commit": "6b7a37372f6ec85f36351e7d0701fb089109fe43",
-      "committedAt": "2026-11-22T21:43:55.000Z",
-      "notes": [
-        "Ranking updates keep the last published track results visible while a newer board is being checked."
       ]
     }
   ],

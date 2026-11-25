@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 490,
+  "number": 491,
   "version": "0.6.3",
-  "revision": 413,
+  "revision": 414,
   "notes": [
-    "Sort profile results by Top % from the same row as the other sort options.",
-    "Active playtime now shows a shorter hover label with the total in hours.",
-    "Replay verification can continue when a different track reaches its comparison limit."
+    "Track Breakdown keeps all six sorting options in one row and aligns results on tablets and Chromebooks."
   ],
-  "preparedAt": "2026-11-25T22:34:23.316Z",
-  "committedAt": "2026-11-25T22:35:28.000Z"
+  "preparedAt": "2026-11-25T22:38:47.670Z",
+  "committedAt": "2026-11-25T22:39:00.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
