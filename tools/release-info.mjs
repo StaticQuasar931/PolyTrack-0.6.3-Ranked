@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 491,
+  "number": 492,
   "version": "0.6.3",
-  "revision": 414,
+  "revision": 415,
   "notes": [
-    "Track Breakdown keeps all six sorting options in one row and aligns results on tablets and Chromebooks."
+    "Overall Rankings shows how long a racer has held their saved position again.",
+    "Top % keeps last-place finishes below other ranked results and shows shorter percentages."
   ],
-  "preparedAt": "2026-11-25T22:38:47.670Z",
-  "committedAt": "2026-11-25T22:39:00.000Z"
+  "preparedAt": "2026-11-25T22:52:05.521Z",
+  "committedAt": "2026-11-25T22:52:32.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
