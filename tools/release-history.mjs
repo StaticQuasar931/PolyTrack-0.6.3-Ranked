@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 488,
+    "number": 490,
     "version": "0.6.3",
-    "revision": 412,
+    "revision": 413,
     "notes": [
-      "Ranked leaderboards now include newly saved race times.",
-      "Corrected Rolling Hills Racer event standings so verified Event RP matches the replay."
+      "Sort profile results by Top % from the same row as the other sort options.",
+      "Active playtime now shows a shorter hover label with the total in hours.",
+      "Replay verification can continue when a different track reaches its comparison limit."
     ]
   },
   "entries": [
+    {
+      "number": 488,
+      "title": "Refresh ranked leaderboards",
+      "commit": "8a0aae434a347bc8d550ecb9298b92f6082917a8",
+      "committedAt": "2026-11-24T10:36:18.000Z",
+      "notes": [
+        "Ranked leaderboards now include newly saved race times.",
+        "Corrected Rolling Hills Racer event standings so verified Event RP matches the replay."
+      ]
+    },
     {
       "number": null,
       "title": "Sync public ranked snapshots",
@@ -181,15 +192,6 @@ const historyData = {
       "committedAt": "2026-11-22T21:43:55.000Z",
       "notes": [
         "Ranking updates keep the last published track results visible while a newer board is being checked."
-      ]
-    },
-    {
-      "number": 464,
-      "title": "Batch ranking snapshot reconciliation",
-      "commit": "434f0cca7422723fe96e9d69f2af955635729347",
-      "committedAt": "2026-11-22T21:30:13.000Z",
-      "notes": [
-        "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
       ]
     }
   ],

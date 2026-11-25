@@ -73,17 +73,17 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=412',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=413',document.currentScript?.src||location.href).href;
   let nativePartialReplaySelection=null,nativePartialReplayRevision=0;
   document.addEventListener('click',nativePartialReplayStartupClick,true);
-  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=412',eventsModuleUrl).href)
+  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=413',eventsModuleUrl).href)
     .then(installNativePartialReplayFallback).catch(error=>{console.warn('Native partial replay controls unavailable',error);return null;});
   let helpControlsModule=null,releaseInfoModule=null,installedRevisionNotice=null,siteUpdateHandle=null,siteUpdateMenuState=null;
-  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=412',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=412',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=412',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
+  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=413',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=413',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=413',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
       siteUpdateMenuState=menuState;releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='412';
+  const extraCatalogRevision='413';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -124,7 +124,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=412',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=413',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -164,7 +164,7 @@
     const epoch=warmLocalWeeklyCatalog.snapshotEpoch||0,isCurrent=()=>epoch===(warmLocalWeeklyCatalog.snapshotEpoch||0);
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=412',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=413',eventsModuleUrl).href);
       if(!isCurrent())return;
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       if(!isCurrent())return;
@@ -311,7 +311,7 @@
         let payload=await response.json();
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=412');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=413');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
@@ -654,7 +654,7 @@
     if(saved){if(!saveOnly){saved.click();extraTracksUi?.close();}return;}
     const importButton=[...document.querySelectorAll('.track-selection-ui > .bar > button')].find(button=>button.querySelector('img[src*="import.svg"]'));
     if(!importButton)throw Error('Open Custom Tracks, then try again.');
-    const {reserveTrackSpace}=await import(new URL('../tools/track-import-storage.mjs?v=412',eventsModuleUrl).href);
+    const {reserveTrackSpace}=await import(new URL('../tools/track-import-storage.mjs?v=413',eventsModuleUrl).href);
     await window.__ptRankedDataStorageReady;
     await window.__ptRankedDataStorage?.flush();
     reserveTrackSpace(localStorage,code.length,{preserveCaches:true,onEvict:(key,raw)=>{
@@ -1172,7 +1172,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   const jsonStorageCache=new Map();
   // Only downloaded caches move. Native saves, replays and pending uploads stay compatible.
-  if(typeof window==='object')window.__ptRankedDataStorageReady=import('./tools/ranked-data-storage.mjs?v=412').then(async module=>{
+  if(typeof window==='object')window.__ptRankedDataStorageReady=import('./tools/ranked-data-storage.mjs?v=413').then(async module=>{
     const storage=module.createRankedDataStorage({storage:localStorage,indexedDB:window.indexedDB,eventTarget:window});
     window.__ptRankedDataStorage=storage;
     await storage.ready;
@@ -1348,6 +1348,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const timestamp=Number(value);
     return Number.isSafeInteger(timestamp)&&timestamp>0&&timestamp<=now?timestamp:0;
   }
+  function activeDurationTooltip(milliseconds){
+    const seconds=Math.floor(Math.max(0,Number(milliseconds)||0)/1000);
+    const minutes=Math.floor(seconds/60);
+    if(minutes<60)return minutes>0?minutes+' min total':seconds+' sec total';
+    const remaining=minutes%60;
+    return Math.floor(minutes/60).toLocaleString('en-US')+' h'+(remaining?' '+remaining+' min':'')+' total';
+  }
   function preciseDurationLabel(milliseconds){
     const total=Math.floor(Math.max(0,Number(milliseconds)||0)/1000);
     const parts=[[Math.floor(total/86400),'day'],[Math.floor(total%86400/3600),'hour'],[Math.floor(total%3600/60),'minute'],[total%60,'second']];
@@ -1520,7 +1527,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }catch(error){noteFirebaseQuota(error);log('error','[STREAK401] Daily activity was not queued',String(error?.message||error));return null;}
   }
   async function getDailyActivityController(){
-    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=412').catch(error=>{dailyActivityModulePromise=null;throw error;});
+    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=413').catch(error=>{dailyActivityModulePromise=null;throw error;});
     const {createDailyActivitySync}=await dailyActivityModulePromise;
     if(!dailyActivityController)dailyActivityController=createDailyActivitySync({
       now:()=>Date.now(),
@@ -2031,7 +2038,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(!profileBreakdownModuleRequest)profileBreakdownModuleRequest=import(new URL('../tools/profile-track-breakdown.mjs?v='+extraCatalogRevision,eventsModuleUrl).href).catch(()=>{profileBreakdownModuleRequest=null;return null;});
     void profileBreakdownModuleRequest.then(module=>{
       if(!module||!current())return;const section=content.querySelector('.profile-track-history'),list=section?.querySelector('.profile-track-list');if(!section||!list)return;
-      const count=section.querySelector('header>span');if(count)count.textContent=module.trackCoverageSummary({saved:content.__profileFinishes?.length??0,ranked:Number.isSafeInteger(entry.raceCount)?entry.raceCount:null,localOnly:entry.localOnly===true});
       const medals=content.querySelector('[data-podium-kind="earned"] .profile-achievement-medals');
       for(const kind of ['gold','silver','bronze']){
         const card=medals?.querySelector('.profile-medal-card.'+kind);if(!card)continue;
@@ -2354,8 +2360,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=412');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=412');
+    const module=await import('./tools/developer-diagnostics.mjs?v=413');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=413');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -2439,16 +2445,16 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=412');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=413');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=412');
-        localInsights=module.createLocalInsights({storage,revision:412});
-        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=412').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:412,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
-        void import('./tools/control-usage.mjs?v=412').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=413');
+        localInsights=module.createLocalInsights({storage,revision:413});
+        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=413').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:413,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
+        void import('./tools/control-usage.mjs?v=413').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=412');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=413');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -2472,7 +2478,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=412');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=413');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -3041,7 +3047,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       normalizeReplayPayloadString(row.replay||row.recording||'')===payload.recording);
     let prepared;
     if(own&&payload.verifiedState===0){
-      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=412',eventsModuleUrl).href);
+      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=413',eventsModuleUrl).href);
       const options={accountId:context.accountId,trackId:context.trackId,recordingId:selectedRow.recordingId,isSelf:true,explicitSelection:true};
       try{prepared=await module.prepareOwnLocalPbPlayback(own,payload,options);}
       catch(error){
@@ -3562,7 +3568,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(file.size>16384)throw Error('Recovery file is too large.');
         const value=JSON.parse(await file.text()),user=window.firebase?.auth?.();
         if(!user)throw Error('Open Ranked once, then try again.');
-        const module=await import('./tools/cloud-signin-recovery.mjs?v=412');
+        const module=await import('./tools/cloud-signin-recovery.mjs?v=413');
         const result=await module.restoreCloudSignIn(value,{auth:user,accountId,origin:location.origin,pathname:location.pathname,isCurrent:()=>activeRankedAccountId()===accountId});
         cloudOwnerConflicts.delete(accountId);
         if(result.alreadyCorrect){
@@ -3632,7 +3638,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(notifyViews=true){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=412').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility,expectedOwnerUid:()=>{const id=activeRankedAccountId();return (readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[id]?.acknowledgedOwnerUid||'';},allowAnonymousCreation:()=>{const row=(readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[activeRankedAccountId()];return !Object.keys(row?.confirmed||{}).length&&!Object.keys(row?.permissionDenied||{}).length;}})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=413').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility,expectedOwnerUid:()=>{const id=activeRankedAccountId();return (readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[id]?.acknowledgedOwnerUid||'';},allowAnonymousCreation:()=>{const row=(readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[activeRankedAccountId()];return !Object.keys(row?.confirmed||{}).length&&!Object.keys(row?.permissionDenied||{}).length;}})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure()).then(app=>{
       const auth=app.auth();
       if(workshopAuth!==auth){
@@ -3646,7 +3652,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null,firebaseUsageRetryAt=0;
   async function observeFirestore(database){
-    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=412',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
+    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=413',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
     if(!database||!firebaseUsageModule&&Date.now()<firebaseUsageRetryAt)return database;
     // Await the early-started observer, but never block saving on diagnostics failure.
     const module=firebaseUsageModule||await withTimeout(firebaseUsageModulePromise,1500,'Usage observer unavailable').catch(()=>{firebaseUsageRetryAt=Date.now()+60000;return null;});
@@ -3776,7 +3782,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=412',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=413',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({registryMode:publicNameRegistryMode,tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -4275,7 +4281,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=412',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=413',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -4791,7 +4797,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=412',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=413',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({registryMode:publicNameRegistryMode,tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -7048,7 +7054,7 @@ function rankingScopeMarkup(category,scope='total'){
   function loadRankingDisplayPolicy(){
     if(rankingDisplayPolicy)return Promise.resolve(rankingDisplayPolicy);
     if(rankingDisplayPolicyRequest)return rankingDisplayPolicyRequest;
-    rankingDisplayPolicyRequest=import('./tools/ranking-display-policy.mjs?v=412').then(module=>{
+    rankingDisplayPolicyRequest=import('./tools/ranking-display-policy.mjs?v=413').then(module=>{
       rankingDisplayPolicy=module;
       if(isElementVisible(document.getElementById('overallLeaderboardPanel')))
         renderEntries(overallEntriesCache,overallLoadState,{preservePage:true,quietRows:true});
@@ -7087,7 +7093,7 @@ function rankingScopeMarkup(category,scope='total'){
   function loadFieldRpModule(){
     if(fieldRpModule)return Promise.resolve(fieldRpModule);
     if(fieldRpModuleRequest)return fieldRpModuleRequest;
-    const request=import('./tools/field-rp.mjs?v=412').then(module=>{
+    const request=import('./tools/field-rp.mjs?v=413').then(module=>{
       fieldRpModule=module;
       if(overallCategory==='field'&&isElementVisible(document.getElementById('overallLeaderboardPanel')))
         renderEntries(overallEntriesCache,overallLoadState,{preservePage:true,quietRows:true});
@@ -7099,7 +7105,7 @@ function rankingScopeMarkup(category,scope='total'){
   function loadAverageScopeSource(){
     if(averageScopeExtraIds)return Promise.resolve(averageScopeExtraIds);
     if(averageScopeSourceRequest)return averageScopeSourceRequest;
-    const request=import('./tools/ranking-scope-model.mjs?v=412').then(module=>{
+    const request=import('./tools/ranking-scope-model.mjs?v=413').then(module=>{
       averageScopeExtraIds=module.SCOPED_AVERAGE_EXTRA_TRACK_IDS;
       if(overallCategory==='average'&&isElementVisible(document.getElementById('overallLeaderboardPanel')))
         renderEntries(overallEntriesCache,overallLoadState,{preservePage:true,quietRows:true});
@@ -7201,7 +7207,7 @@ function rankingScopeMarkup(category,scope='total'){
       :estimateRankChanged?'Local rank-'+estimateRank+'. Verified rank-'+snapshotRank+'.'
       :origin?'Verified RP-'+formatRp(origin.score)+'.':'Snapshot ranking.';
     const estimateTitle=entry.casualProjection?.captureRecalculated===true?'Track-board estimate. Verified PBs only.':(origin&&entry.localPending?'Assumes new PBs pass verification. ':'')+estimateComparison;
-    const scoreTitle=(overallCategory==='field'?'Experimental Field RP. ':'')+estimateTitle+(origin||entry.casualProjection?.captureRecalculated===true?'':' '+(scoreTitles[overallCategory]||'Derived from the same complete Ranked snapshot.'))+(['playtime','veterans'].includes(overallCategory)?` Exact duration: ${preciseDurationLabel(categoryValue)}.`:'');
+    const scoreTitle=overallCategory==='playtime'?activeDurationTooltip(categoryValue):(overallCategory==='field'?'Experimental Field RP. ':'')+estimateTitle+(origin||entry.casualProjection?.captureRecalculated===true?'':' '+(scoreTitles[overallCategory]||'Derived from the same complete Ranked snapshot.'))+(overallCategory==='veterans'?` Exact duration: ${preciseDurationLabel(categoryValue)}.`:'');
     const missingValue=(podiumScope!==null&&!podiumScope.known)||(overallCategory==='field'&&!rankingMetricFor(entry,'field').known)||(['wins','casual'].includes(overallCategory)&&!rankingMetricFor(row).known)||(overallCategory==='tracks'&&completedTrackCount(row)===null)||(entry.groupScore===null&&overallCategory==='overall')||(overallCategory==='casual'&&(!Number.isFinite(row?.casualRp)||row.casualRp<0||!Number.isSafeInteger(row?.casualCompletionCount)||row.casualCompletionCount<0))||(overallCategory==='average'&&(overallRankingScope==='total'?Number(row?.averagePlacementVersion||0)<AVERAGE_PLACEMENT_VERSION:!rankingMetricFor(entry,'average').known))||(overallCategory==='competitiveAverage'&&(!(Number(row?.competitiveAverageEligibleTracks||0)>0)||row?.competitiveAveragePlacement==null))||(overallCategory==='playtime'&&categoryValue<=0);
     const categoryDisplay=missingValue?'N/A':overallCategory==='casual'?categoryValue.toLocaleString('en-US',{maximumFractionDigits:0}):overallCategory==='field'?formatRankingFieldRp(categoryValue):overallCategory==='playtime'?activeDurationLabel(categoryValue):overallCategory==='veterans'?durationLabel(categoryValue):overallCategory==='average'||overallCategory==='competitiveAverage'?Math.max(0,categoryValue).toFixed(2):['overall','skill','consistency','improved','rising'].includes(overallCategory)?formatRp(categoryValue):overallCategory==='weight'?categoryValue.toFixed(2):overallCategory==='podiumRate'?`${categoryValue.toFixed(1)}%`:categoryValue.toLocaleString('en-US',{maximumFractionDigits:0});
     const customCount=Number(row?.customCount||0)||0;
@@ -7214,7 +7220,7 @@ function rankingScopeMarkup(category,scope='total'){
       const badgeMarkup=profileBadgeMarkup(row,true);
       const visibleRank=(podiumScope!==null||['casual','field'].includes(overallCategory)||overallCategory==='average'&&overallRankingScope!=='total')&&missingValue?null:rank;
       const rankMarkup=filteredRank&&filteredTotal?`<span class="overall-rank is-filtered" title="Filtered place #${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank #${preservedGlobalRank}.`:'Global rank unavailable.'}">#${filteredRank}/${filteredTotal}<small>FILTERED${preservedGlobalRank?` · GLOBAL #${preservedGlobalRank}`:''}</small></span>`:`<span class="overall-rank" title="${escapeHtml(estimateTitle)}">${visibleRank===null?'N/A':provisional&&overallCategory==='overall'?'P':`#${visibleRank}`}</span>`;
-      return `<div class="overall-entry ${visibleRank===1?'top-1':visibleRank===2?'top-2':visibleRank===3?'top-3':''} ${visibleRank===4?'after-podium':''} ${isSelf?'is-self':''} ${provisional?'is-provisional':''} ${missingValue?'has-missing-value':''} ${racerCosmeticClasses(row)}" data-userid="${safeUserId}" data-category="${escapeHtml(overallCategory)}" tabindex="0" role="button" aria-label="View ${safeName} ranked profile. ${filteredRank&&filteredTotal?`Filtered place ${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank ${preservedGlobalRank}.`:''}`:''} ${escapeHtml(categoryUnit)}: ${escapeHtml(categoryDisplay)}. ${escapeHtml(estimateTitle)}" style="animation-delay:${(Math.min(index%OVERALL_PAGE_SIZE,7)*.015).toFixed(3)}s">${rankMarkup}<span class="overall-name">${carModelPreview(savedCarStyle,row?.carColorId||row?.carColors,safeUserId,row)}<span class="overall-name-label"><span class="overall-name-main">${safeName}${countryFlagMarkup(row?.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}${badgeMarkup}${provisional?'<span class="overall-provisional-tag">PROVISIONAL</span>':''}</span>${hintText?`<span class="overall-name-hint">${hintText}</span>`:''}<span class="overall-racer-meta">${identityMeta}</span></span></span><div class="overall-mid">${move}<div class="overall-best">${best}</div></div><div class="overall-stats" title="${escapeHtml(scoreTitle)}" aria-label="${escapeHtml(scoreTitle)}"><div class="overall-score">${categoryDisplay}</div><div class="overall-score-unit">${categoryUnit}</div></div></div>`;
+      return `<div class="overall-entry ${visibleRank===1?'top-1':visibleRank===2?'top-2':visibleRank===3?'top-3':''} ${visibleRank===4?'after-podium':''} ${isSelf?'is-self':''} ${provisional?'is-provisional':''} ${missingValue?'has-missing-value':''} ${racerCosmeticClasses(row)}" data-userid="${safeUserId}" data-category="${escapeHtml(overallCategory)}" tabindex="0" role="button" aria-label="View ${safeName} ranked profile. ${filteredRank&&filteredTotal?`Filtered place ${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank ${preservedGlobalRank}.`:''}`:''} ${escapeHtml(categoryUnit)}: ${escapeHtml(categoryDisplay)}. ${overallCategory==='playtime'?'':escapeHtml(estimateTitle)}" style="animation-delay:${(Math.min(index%OVERALL_PAGE_SIZE,7)*.015).toFixed(3)}s">${rankMarkup}<span class="overall-name">${carModelPreview(savedCarStyle,row?.carColorId||row?.carColors,safeUserId,row)}<span class="overall-name-label"><span class="overall-name-main">${safeName}${countryFlagMarkup(row?.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}${badgeMarkup}${provisional?'<span class="overall-provisional-tag">PROVISIONAL</span>':''}</span>${hintText?`<span class="overall-name-hint">${hintText}</span>`:''}<span class="overall-racer-meta">${identityMeta}</span></span></span><div class="overall-mid">${move}<div class="overall-best">${best}</div></div><div class="overall-stats" title="${escapeHtml(scoreTitle)}" ${overallCategory==='playtime'?'':'aria-label="'+escapeHtml(scoreTitle)+'"'}><div class="overall-score">${categoryDisplay}</div><div class="overall-score-unit">${categoryUnit}</div></div></div>`;
   }
 
   const OVERALL_PAGE_SIZE = 15;
@@ -7292,7 +7298,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=412').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=413').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -7318,7 +7324,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=412',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=413',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -7363,7 +7369,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=412',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=413',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -7383,8 +7389,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=412',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=412',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=412',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=413',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=413',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=413',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -8223,7 +8229,7 @@ function rankingScopeMarkup(category,scope='total'){
     const base=new URL(eventsModuleUrl),url=new URL(selection.trackUrl);
     let code;
     if(url.origin===base.origin){
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=412',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=413',eventsModuleUrl).href);
       const match=/\/assets\/([a-f0-9]{64})\.track$/.exec(url.pathname);
       code=await readKodubPracticeTrack({id:selection.trackId,codeHash:match?.[1],trackUrl:url.href},{decode,baseUrl:base.href,isCurrent:current});
     }else code=await kodubAdapter.readLiveKodubTrack(selection,{brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch,decode,isCurrent:current});
@@ -8322,7 +8328,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=412',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=413',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -8455,7 +8461,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(Date.now()<plannerScoringRetryAt)return Promise.resolve(null);
     const epoch=profileSnapshotEpoch;
     const request=Promise.all([readPublicSnapshotBackup('overall-manifest'),readPublicSnapshotBackup('overall-results'),
-      import('./tools/planner-scoring-source.mjs?v=412')]).then(async([overall,packed,module])=>{
+      import('./tools/planner-scoring-source.mjs?v=413')]).then(async([overall,packed,module])=>{
       const index=await module.buildPlannerScoringSourceFromManifest(overall,packed);
       if(epoch!==profileSnapshotEpoch)return null;
       plannerScoringIndex={...index,epoch,updatedAt:overall.updatedAt};return plannerScoringIndex;
@@ -9528,7 +9534,7 @@ function compactPlannerEvidenceLabel(action) {
   }
   function openRankedProfile(userId){
     if(deferProfileHubRefresh(document.getElementById('overallProfileContent'),userId))return;
-    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=412').then(module=>{
+    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=413').then(module=>{
       compactProfilePresentation=module;
       const current=document.getElementById('overallProfilePopup');
       if(current?.dataset.profileUser&&isElementVisible(current))openRankedProfile(current.dataset.profileUser);
@@ -9590,7 +9596,7 @@ function compactPlannerEvidenceLabel(action) {
       const impact=!hasPlacement||weight===null?null:weight===0?0:Number(finish.contribution||0)||Math.max(0,(100-rankedPlacementCost(finish.rank,finish.fieldSize))*weight);
       const typeText=info.displayType||(info.type==='official'?'Official':info.type==='community'?'Community':info.type==='extra'?'Extra':'Custom');
       const weightTitle=hasPlacement?rankedWeightTitle(finish.trackId,finish.fieldSize,false,finish):'Load this track leaderboard to calculate field weight.';
-      return `<button class="profile-track-row track-type-${escapeHtml(info.type)} ${hasPlacement?'':'is-null'}" type="button" data-track-id="${escapeHtml(finish.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${place}. ${topPercent?topPercent+'. ':''}${weight===null?'Weight not loaded':weight.toFixed(2)+' times track weight'}."><span class="profile-track-visual">${trackThumbnailMarkup(finish.trackId)}</span><span class="profile-track-name"><b>${escapeHtml(info.name)}</b><small class="track-type-label ${escapeHtml(info.type)}">${typeText}${hasPlacement?` · ${finish.fieldSize} racers`:''}</small><small>${impact===null?'Contribution not loaded':'Contribution '+impact.toFixed(1)}</small></span><span class="profile-track-weight" title="${escapeHtml(weightTitle)}"><b>${weight===null?'N/A':weight.toFixed(2)+'x'}</b><small>${parts?'Track weight':'Weight not loaded'}</small><small>${escapeHtml(finish.local?'Local PB':finish.cachedAt?'Standings '+age.replace(/ ago$/,'')+' old':'Standings age unknown')}</small>${finish.snapshotCapturedAt?'<small>Snapshot '+escapeHtml(ageLabel(finish.snapshotCapturedAt).replace(/ ago$/,''))+' old</small>':''}</span><span class="profile-track-result ${kind||''}">${kind?`<img src="${medalIcon(kind)}" alt="${kind} medal">`:''}<b>${place}</b>${topPercent?`<small class="profile-track-percent" title="Place divided by field size">${topPercent}</small>`:''}<small>${finish.local?'Local PB':finish.runVerified===true?'Verified':finish.integrityVerified===true?'Replay checked':hasPlacement?'Saved result':'Open leaderboard to load'}</small></span><time>${finish.timeMs?`${formatRaceTime(finish.timeMs)}${pbTimestamp(finish)?`<small>PB ${escapeHtml(formatLocalPbDate(finish))}</small>`:''}`:'Time not loaded'}</time></button>`;
+      return `<button class="profile-track-row track-type-${escapeHtml(info.type)} ${hasPlacement?'':'is-null'}" type="button" data-track-id="${escapeHtml(finish.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${place}. ${topPercent?topPercent+'. ':''}${weight===null?'Weight not loaded':weight.toFixed(2)+' times track weight'}."><span class="profile-track-visual">${trackThumbnailMarkup(finish.trackId)}</span><span class="profile-track-name"><b>${escapeHtml(info.name)}</b><small class="track-type-label ${escapeHtml(info.type)}">${typeText}${hasPlacement?` · ${finish.fieldSize} racers`:''}</small><small>${impact===null?'Contribution not loaded':'Contribution '+impact.toFixed(1)}</small></span><span class="profile-track-weight" title="${escapeHtml(weightTitle)}"><b>${weight===null?'N/A':weight.toFixed(2)+'x'}</b><small>${parts?'Track weight':'Weight not loaded'}</small><small>${escapeHtml(finish.local?'Local PB':finish.cachedAt?'Standings '+age.replace(/ ago$/,'')+' old':'Standings age unknown')}</small>${finish.snapshotCapturedAt?'<small>Snapshot '+escapeHtml(ageLabel(finish.snapshotCapturedAt).replace(/ ago$/,''))+' old</small>':''}</span><span class="profile-track-result ${kind||''}">${kind?`<img src="${medalIcon(kind)}" alt="${kind} medal">`:''}<b>${place}</b><small>${finish.local?'Local PB':finish.runVerified===true?'Verified':finish.integrityVerified===true?'Replay checked':hasPlacement?'Saved result':'Open leaderboard to load'}</small></span><time>${finish.timeMs?`${formatRaceTime(finish.timeMs)}${pbTimestamp(finish)?`<small>PB ${escapeHtml(formatLocalPbDate(finish))}</small>`:''}`:'Time not loaded'}</time><small class="profile-track-percent" title="Place divided by field size">${topPercent?topPercent.slice(4):'N/A'}</small></button>`;
     }).join(''):'<div class="profile-track-empty"><strong>Track times are not loaded on this device</strong><span>The complete snapshot statistics above are still available. Open track leaderboards to add exact times and full result rows without bulk-reading every track.</span></div>';
     const rankIndex=overallEntriesCache.findIndex((row)=>cleanUserId(row.userId)===cleanUserId(entry.userId));
     const above=rankIndex>0?overallEntriesCache[rankIndex-1]:null;
@@ -9661,7 +9667,7 @@ function compactPlannerEvidenceLabel(action) {
     content.__achievementCleanup?.();content.__achievementEpoch=(content.__achievementEpoch||0)+1;
     content.__studioDraftHistory?.dispose();content.__studioDraftHistory=null;content.__cosmeticPreviewController?.dispose();content.__cosmeticPreviewController=null;
     content.__localFriendsCleanup?.();content.__localFriendsCleanup=null;content.__applyProfileTrackScope=null;content.__socialEpoch=(content.__socialEpoch||0)+1;
-    content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId,entry)}<div class="profile-achievement-row profile-podium-wide" data-podium-kind="${podium.kind}"><span class="profile-achievement-label">${escapeHtml(podium.label)}</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ${entry.localOnly?'saved':'ranked'} track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">${entry.localOnly?'LOCAL PB PROFILE':'RANKED PROFILE'}</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?'<div class="profile-achievement-journey" data-profile-hub-pending role="group" aria-label="Racer progress and design loading"><button type="button" disabled><strong>Achievements</strong></button><button type="button" disabled><strong>Racer Studio</strong></button><button type="button" disabled><strong>Shop</strong></button></div>':''}${isSelf?profileCustomizerMarkup(entry):''}<section class="profile-highlights"><header><h4>Racer highlights</h4><p>Strong results and tracks worth another try.</p></header><div class="profile-results">${resultCards}</div></section>${guideMarkup}${isSelf?renderPracticeProfile(practiceProfileOptions(uid,cachedFinishes)):''}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Track results</h4></div><span>${cachedFinishes.length.toLocaleString('en-US')} saved${entry.localOnly?' · Local results':Number(entry.raceCount||0)===cachedFinishes.length?' tracks':' tracks · '+Number(entry.raceCount||0).toLocaleString('en-US')+' ranked'}</span><button type="button" class="profile-track-percent-sort" data-profile-sort="percent" title="Place divided by field size. A lower percentage is better." aria-label="Sort by placement percentage">Top %${profileSortArrow('percent')}</button></header><div class="profile-track-head"><button type="button" data-profile-sort="season" data-profile-user="${uid}" class="${profileSort==='season'?'active':''}" aria-label="Sort by season and track number">Season${profileSortArrow('season')}</button><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">Saved results and local PBs are shown. Missing placements load from complete saved boards when available.</p>`;
+    content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId,entry)}<div class="profile-achievement-row profile-podium-wide" data-podium-kind="${podium.kind}"><span class="profile-achievement-label">${escapeHtml(podium.label)}</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ${entry.localOnly?'saved':'ranked'} track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">${entry.localOnly?'LOCAL PB PROFILE':'RANKED PROFILE'}</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?'<div class="profile-achievement-journey" data-profile-hub-pending role="group" aria-label="Racer progress and design loading"><button type="button" disabled><strong>Achievements</strong></button><button type="button" disabled><strong>Racer Studio</strong></button><button type="button" disabled><strong>Shop</strong></button></div>':''}${isSelf?profileCustomizerMarkup(entry):''}<section class="profile-highlights"><header><h4>Racer highlights</h4><p>Strong results and tracks worth another try.</p></header><div class="profile-results">${resultCards}</div></section>${guideMarkup}${isSelf?renderPracticeProfile(practiceProfileOptions(uid,cachedFinishes)):''}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Track results</h4></div></header><div class="profile-track-head"><button type="button" data-profile-sort="season" data-profile-user="${uid}" class="${profileSort==='season'?'active':''}" aria-label="Sort by season and track number">Season${profileSortArrow('season')}</button><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button><button type="button" data-profile-sort="percent" data-profile-user="${uid}" class="${profileSort==='percent'?'active':''}" title="Place divided by field size. Lower is better." aria-label="Sort by placement percentage">Top %${profileSortArrow('percent')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">Saved results and local PBs are shown. Missing placements load from complete saved boards when available.</p>`;
     const newPractice=content.querySelector('.polytrack-practice-profile');
     if(newPractice)newPractice.__ppDispose=installPracticeProfileControls(newPractice);
     restorePracticeProfileView(newPractice,practiceView);
@@ -9824,7 +9830,7 @@ function compactPlannerEvidenceLabel(action) {
     const isCurrent=()=>snapshotUpdateRequest===job&&!job.controller.signal.aborted&&origin?.isConnected&&origin===document.getElementById('overallFreshness')&&isElementVisible(document.getElementById('overallLeaderboardPanel'))&&!['overallHelpPopup','overallProfilePopup'].some(id=>isElementVisible(document.getElementById(id)));
     let module;
     try{
-      module=await import('./tools/snapshot-update-check.mjs?v=412');
+      module=await import('./tools/snapshot-update-check.mjs?v=413');
       if(!isCurrent())return;
       snapshotUpdateChecker||=module.createSnapshotUpdateCheck();
       const generation=Number(/public-snapshots([0-9]+)\//.exec(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'')?.[1]);
@@ -10051,7 +10057,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(412));
+    headers.set('X-PolyTrack-Revision', String(413));
     return observedWorkerFetch(url, {...options, headers});
   }
 
@@ -10209,7 +10215,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=412'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=413'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -10288,8 +10294,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     return false;
   }
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=412').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=412');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=413').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=413');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,publication:module.readSnapshotPublicationMeta(document),prepareRecording:ptPrepareGatedRecording,beforeGenerationChange:allowSnapshotGenerationChange,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent(metric.source==='memory'?'cache':'snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         invalidateNativePartialReplay(true);
@@ -10381,7 +10387,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=412');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=413');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -12957,7 +12963,7 @@ return {normalizeRankedNotifications,rankedNotificationRetryDelay};})();
   });
 
   function boot(){
-    void import('./tools/finish-presentation.mjs?v=412').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
+    void import('./tools/finish-presentation.mjs?v=413').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
     void initializePracticeHistory();
     setInterval(()=>{const popup=document.getElementById('overallProfilePopup');if(popup&&isElementVisible(popup))schedulePracticeProfileRefresh();},30000);
     // Warm only same-origin schedule assets, never the database, before menus open.
@@ -12978,10 +12984,10 @@ return {normalizeRankedNotifications,rankedNotificationRetryDelay};})();
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=412'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=413'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=412',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=412',eventsModuleUrl).href)]).then(([module,release])=>{
-      siteUpdateHandle=module.installSiteUpdates({revision:412,document,
+    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=413',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=413',eventsModuleUrl).href)]).then(([module,release])=>{
+      siteUpdateHandle=module.installSiteUpdates({revision:413,document,
         onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false&&onlineServicePageAllowed();},
         isIdle:canOfferSiteUpdate,
         canReload:canOfferSiteUpdate,endpoint:module.CANONICAL_SITE_VERSION_URL});
@@ -13046,7 +13052,7 @@ return {normalizeRankedNotifications,rankedNotificationRetryDelay};})();
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=412').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=413').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -13073,7 +13079,7 @@ return {normalizeRankedNotifications,rankedNotificationRetryDelay};})();
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=412', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=413', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});
