@@ -614,8 +614,22 @@ html body #overallProfilePopup .profile-podium-wide .profile-achievement-medals 
 html body #overallProfilePopup .profile-podium-wide .profile-ranked-count { margin-left: auto; }
 html body #overallProfilePopup .profile-podium-target { display: flex; flex: 1; gap: 8px 16px; align-items: center; flex-wrap: wrap; font-size: 17px; }
 html body #overallProfilePopup .profile-podium-target b { color: var(--profile-accent, #7ee7ff); }
-html body #overallProfilePopup .profile-track-head { padding-left: 10px !important; grid-template-columns: 84px minmax(0, 1fr) 110px 150px 124px !important; }
-html body #overallProfilePopup .profile-track-head [data-profile-sort="season"] { min-height: 36px; padding: 4px; text-align: center; }
+html body #overallProfilePopup .profile-track-head { display:grid !important; padding-left:10px !important; }
+html body #overallProfilePopup .profile-track-head,
+html body #overallProfilePopup .profile-track-row { grid-template-columns:84px minmax(0,1fr) 110px 132px 112px 82px !important; }
+html body #overallProfilePopup .profile-track-head button { min-width:0; text-align:center; }
+html body #overallProfilePopup .profile-track-row > .profile-track-percent { color:#b4e5ff; font-variant-numeric:tabular-nums; text-align:right; }
+@media (max-width: 760px) {
+  html body #overallProfilePopup .profile-track-head { grid-template-columns:repeat(6,minmax(0,1fr)) !important; gap:2px; padding:4px !important; }
+  html body #overallProfilePopup .profile-track-head button { padding-inline:2px; font-size:clamp(9px,2.6vw,13px) !important; }
+  html body #overallProfilePopup .profile-track-row { grid-template-columns:72px minmax(0,1fr) minmax(0,1fr) !important; grid-template-areas:"image name name" "weight result time" "weight percent time" !important; }
+  html body #overallProfilePopup .profile-track-row > .profile-track-visual { grid-area:image !important; }
+  html body #overallProfilePopup .profile-track-row > .profile-track-name { grid-area:name !important; }
+  html body #overallProfilePopup .profile-track-row > .profile-track-weight { grid-area:weight !important; }
+  html body #overallProfilePopup .profile-track-row > .profile-track-result { grid-area:result !important; }
+  html body #overallProfilePopup .profile-track-row > time { grid-area:time !important; display:block !important; }
+  html body #overallProfilePopup .profile-track-row > .profile-track-percent { grid-area:percent; text-align:left; }
+}
 html body #overallLeaderboardPanel[data-category="topTracks"] #overallDailyGrid .overall-center-tools { justify-content: center; align-content: center; }
 html body #overallLeaderboardPanel[data-category="topTracks"] #overallDailyGrid .overall-challenge-stack { align-content: center; }
 @media (max-width: 700px) {

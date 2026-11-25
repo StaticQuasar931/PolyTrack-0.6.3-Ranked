@@ -20,7 +20,7 @@ import {readCapturedNormalLedgerRows,applyNativeLedgerToCapturedTracks,publicEve
 import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,reconcileNativeEventTotalsFromPublished,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
-import {loadCapturedNativeJobs,defaultCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
+import {loadCapturedNativeJobs,defaultCapturedReviewFactory,partitionedCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
 import {prioritizeNativeTargets,prioritizeFirstProofWarmup} from './verifier/native-verification-priority.mjs';
 import {verifyLocalSnapshot,nativeLedgerPublicationFiles,withOfflineVerification} from './verifier/local-snapshot-verification.mjs';
 import {loadWeeklyTrustedTrack} from './verifier/weekly-track.mjs';
@@ -428,13 +428,17 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     const targets=prioritizeFirstProofWarmup({jobs:orderedTargets,policy:context.policy,firstProofCheckpoint});
     if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;
+    // Comparisons never cross track boundaries. Keep each full track under
+    // its own existing comparison limits during hosted saved-data passes.
+    const makeReviewer=publishedRetention&&reviewFactory===defaultCapturedReviewFactory
+      ?partitionedCapturedReviewFactory:reviewFactory;
     const review=async value=>{
-      reviewer||=await reviewFactory({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
+      reviewer||=await makeReviewer({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
         previouslyAccepted:inputs.jobs.filter(job=>accepted.has(ledgerKey(ledgerBinding(job)))).map(job=>({binding:ledgerBinding(job),sourceBinding:binding,accepted:true}))});
       return reviewer(value);
     };
     review.prepare=async value=>{
-      reviewer=await reviewFactory({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
+      reviewer=await makeReviewer({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
         previouslyAccepted:inputs.jobs.filter(job=>accepted.has(ledgerKey(ledgerBinding(job)))).map(job=>({binding:ledgerBinding(job),sourceBinding:binding,accepted:true}))});
       demand(typeof reviewer==='function','captured-controls review capability required');
       if(reviewer.inspect){

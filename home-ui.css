@@ -1214,7 +1214,3 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 
 /* Keep percentage sorting outside the five existing result columns. */
 #overallProfilePopup .profile-track-history>header {flex-wrap:wrap}
-#overallProfilePopup .profile-track-percent-sort {min-height:44px;min-width:76px;padding:7px 12px;background:#20365d;color:#e2efff;border:1px solid #5377a8;font:inherit;white-space:nowrap;cursor:pointer}
-#overallProfilePopup .profile-track-percent-sort.active {background:#2b466f;color:#b2efff;box-shadow:inset 0 -2px #86daef}
-#overallProfilePopup .profile-track-percent-sort:focus-visible {outline:2px solid #e4f7ff;outline-offset:-2px}
-#overallProfilePopup .profile-track-result .profile-track-percent {color:#b4e5ff;font-variant-numeric:tabular-nums}

@@ -127,6 +127,56 @@ export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false
       complete:gaps.length===0,gaps}};
 }
 
+export async function partitionedCapturedReviewFactory({jobs,sourceBinding,policy,previouslyAccepted=[],factory=defaultCapturedReviewFactory}) {
+  demand(Object.isFrozen(jobs),'immutable full comparison inventory required');
+  const groups=new Map(),accepted=new Map(),cache=new Map();
+  for(const job of jobs) {
+    let group=groups.get(job.trackId);
+    if(!group)groups.set(job.trackId,group=[]);
+    group.push(job);
+  }
+  for(const group of groups.values())Object.freeze(group);
+  for(const item of previouslyAccepted) {
+    let group=accepted.get(item.binding.trackId);
+    if(!group)accepted.set(item.binding.trackId,group=[]);
+    group.push(item);
+  }
+  return async ({allJobs,jobs:selected,nativeResults,...context})=>{
+    demand(allJobs===jobs,'comparison inventory changed');
+    demand(selected.length===nativeResults.length&&selected.every((job,i)=>job.resultId===nativeResults[i].resultId),'native review batch changed');
+    const requests=new Map();
+    for(const [i,job] of selected.entries()) {
+      let batch=requests.get(job.trackId);
+      if(!batch)requests.set(job.trackId,batch={jobs:[],nativeResults:[]});
+      batch.jobs.push(job);batch.nativeResults.push(nativeResults[i]);
+    }
+    const combined={complete:true,results:[],reviews:[],incomplete:[],incompleteKeys:[]};
+    for(const [id,batch] of requests) {
+      const group=groups.get(id);
+      demand(group,'selected track absent from comparison inventory');
+      let review=cache.get(id);
+      if(!review)review=await factory({jobs:group,sourceBinding,policy,previouslyAccepted:accepted.get(id)||[]});
+      cache.delete(id);cache.set(id,review);
+      if(cache.size>8)cache.delete(cache.keys().next().value);
+      const report=await review({...context,...batch,allJobs:group});
+      if(!report.complete){
+        const incomplete=report.incompleteKeys?new Set(report.incompleteKeys):null;
+        for(const job of batch.jobs){
+          const bindingKey=ledgerKey(ledgerBinding(job));
+          if(incomplete&&!incomplete.has(bindingKey))continue;
+          const reason=report.incomplete?.find(row=>row.bindingKey===bindingKey)?.reason||report.reason||'clone_review_incomplete';
+          combined.incomplete.push({bindingKey,resultId:job.resultId,trackId:id,reason});
+          combined.incompleteKeys.push(bindingKey);
+        }
+        combined.complete=false;
+      }
+      combined.results.push(...report.results);
+      combined.reviews.push(...report.reviews);
+    }
+    return combined;
+  };
+}
+
 export async function defaultCapturedReviewFactory({jobs,sourceBinding,policy,previouslyAccepted=[]}) {
   const {createCapturedControlReview}=await import('./captured-controls.mjs');
   const reviewer=createCapturedControlReview({allJobs:jobs,sourceBinding,policy,previouslyAccepted});

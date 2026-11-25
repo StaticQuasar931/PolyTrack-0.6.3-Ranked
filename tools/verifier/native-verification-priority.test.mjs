@@ -95,5 +95,5 @@ test('phase warmup hook follows retention event sort and preserves the exact inv
  const fs=await import('node:fs/promises');const source=await fs.readFile(new URL('../native-snapshot-phase.mjs',import.meta.url),'utf8');
  const sort=source.indexOf('const orderedTargets=publishedRetention?priority.jobs.sort('),hook=source.indexOf('const targets=prioritizeFirstProofWarmup({jobs:orderedTargets,policy:context.policy,firstProofCheckpoint});');
  const assertion=source.indexOf('if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);',hook);
- assert.ok(sort>=0&&hook>sort&&assertion>hook);assert.match(source,/allJobs:inputs.jobs/);assert.match(source,/reviewFactory\(\{jobs:value.allJobs/);
+ assert.ok(sort>=0&&hook>sort&&assertion>hook);assert.match(source,/allJobs:inputs.jobs/);assert.match(source,/makeReviewer\(\{jobs:value.allJobs/);
 });

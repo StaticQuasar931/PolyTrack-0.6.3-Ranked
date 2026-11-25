@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {loadCapturedNativeJobs,verifyCapturedSnapshot,defaultCapturedReviewFactory} from './local-snapshot-capture.mjs';
+import {loadCapturedNativeJobs,verifyCapturedSnapshot,defaultCapturedReviewFactory,partitionedCapturedReviewFactory} from './local-snapshot-capture.mjs';
 import {ledgerBinding,ledgerKey,writeLedger} from '../native-verification-ledger.mjs';
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),account='b'.repeat(64),engine='c'.repeat(64),fingerprint='d'.repeat(64),content='e'.repeat(64);
@@ -136,4 +136,36 @@ test('mutable inventory never receives the immutable-review shortcut',async t=>{
   jobs[0].needsReview=true;
   const result=await review({jobs,allJobs:jobs,sourceBinding,policy,ledger,nativeResults:await f.options.verify(f.root,jobs)});
   assert.equal(result.reason,'captured_controls_inventory_changed');
+});
+
+test('partitioned review retains all same-track references and defers only the blocked track',async t=>{
+  const f=await fixture(t),loaded=await loadCapturedNativeJobs({directory:f.directory});
+  const [first]=loaded.jobs,other='1'.repeat(64);
+  const reference={...first,accountId:'2'.repeat(64),uploadId:2,resultId:'accepted-reference'};
+  const blocked={...first,trackId:other,uploadId:3,resultId:'blocked'};
+  const jobs=Object.freeze([first,reference,blocked].map(Object.freeze));
+  const sourceBinding={sourceCommit:'a'.repeat(40),captureSha256:loaded.captureSha256};
+  const prior={binding:ledgerBinding(reference),sourceBinding,accepted:true},seen=[];
+  const review=await partitionedCapturedReviewFactory({jobs,sourceBinding,policy,previouslyAccepted:[prior],
+    factory:async ({jobs:group,previouslyAccepted})=>{
+      seen.push(group[0].trackId);
+      assert.deepEqual(group,group[0].trackId===track?[first,reference]:[blocked]);
+      assert.deepEqual(previouslyAccepted,group[0].trackId===track?[prior]:[]);
+      return async batch=>{
+        assert.equal(batch.allJobs,group);
+        return group[0].trackId===track
+          ?{complete:true,results:batch.nativeResults,reviews:[{bindingKey:ledgerKey(ledgerBinding(first))}]}
+          :{complete:false,reason:'captured_controls_posting_limit',results:[],reviews:[]};
+      };
+    }});
+  const input={allJobs:jobs,jobs:[blocked,first],nativeResults:[{resultId:blocked.resultId},{resultId:first.resultId}]};
+  const result=await review(input);
+  assert.equal(result.complete,false);
+  assert.deepEqual(result.incompleteKeys,[ledgerKey(ledgerBinding(blocked))]);
+  assert.equal(result.incomplete[0].reason,'captured_controls_posting_limit');
+  assert.deepEqual(result.results,[input.nativeResults[1]]);
+  assert.equal(result.reviews.length,1);
+  await review(input);
+  assert.deepEqual(seen,[other,track],'track indexes are reused across batches');
+  await assert.rejects(review({...input,allJobs:[...jobs]}),/comparison inventory changed/);
 });

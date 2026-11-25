@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 488,
+  "number": 490,
   "version": "0.6.3",
-  "revision": 412,
+  "revision": 413,
   "notes": [
-    "Ranked leaderboards now include newly saved race times.",
-    "Corrected Rolling Hills Racer event standings so verified Event RP matches the replay."
+    "Sort profile results by Top % from the same row as the other sort options.",
+    "Active playtime now shows a shorter hover label with the total in hours.",
+    "Replay verification can continue when a different track reaches its comparison limit."
   ],
-  "preparedAt": "2026-11-24T10:33:22.041Z",
-  "committedAt": "2026-11-24T10:36:18.000Z"
+  "preparedAt": "2026-11-25T22:34:23.316Z",
+  "committedAt": "2026-11-25T22:35:28.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

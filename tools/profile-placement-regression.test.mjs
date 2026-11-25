@@ -132,3 +132,16 @@ for(const cloudConfirmed of [false,true])test('complete cached board recomputes 
   assert.equal(finish.local, !cloudConfirmed);
   assert.equal(finish.runVerified,false,'upload confirmation is not physics verification');
 });
+test('Top % shares the six-column sort row, not the track heading',()=>{
+  const markup=patch.match(/<section class="profile-track-history"><header>[\s\S]*?<div class="profile-track-list">/)?.[0];
+  assert.ok(markup);
+  const [heading,columns]=markup.split('<div class="profile-track-head">');
+  assert.doesNotMatch(heading,/data-profile-sort|saved tracks/);
+  assert.deepEqual([...columns.matchAll(/data-profile-sort="([a-z]+)"/g)].map(m=>m[1]),['season','track','weight','place','time','percent']);
+});
+
+test('long active playtime hover expresses the total in hours',()=>{
+  const format=Function(functionSource('activeDurationTooltip')+';return activeDurationTooltip')();
+  assert.equal(format(5*86400000+27*60000),'120 h 27 min total');
+  assert.equal(format(27000),'27 sec total');
+});
