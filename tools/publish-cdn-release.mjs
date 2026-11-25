@@ -21,7 +21,7 @@ const sha = value => typeof value === 'string' && value.length === 40 && /^[a-f0
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function releasePlan({root, commit, read = file => readFile(path.join(root, file)), now = new Date()}) {
+export async function releasePlan({root, commit, read = file => readFile(path.join(root, file)), now = new Date(), requireRankHistoryBinding = false}) {
   if (!sha(commit)) throw Error('Expected a full commit SHA');
   const index = await read('index.html');
   const html = index.toString('utf8');
@@ -29,6 +29,11 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
   if (!directory || !html.includes('main.bundle.js') || !html.includes('polytrack_062_patch.js')) throw Error('Unsupported game entry point');
   const current = JSON.parse(await read('snapshot-current.json'));
   if (current.currentdir !== directory) throw Error('Snapshot pointer and entry point disagree');
+  if (requireRankHistoryBinding) {
+    const history = JSON.parse(await read('tools/overall-rank-history.json'));
+    if(history.schemaVersion!==1||history.directory!==directory)
+      throw Error('Publish the rank history paired with '+directory+' before deploying');
+  }
   const probes = new Set(['index.html', 'site-version.json', 'simulation_worker.bundle.js', 'polytrack_physics.wasm', 'snapshot-current.json', directory + '/index.json', directory + '/bootstrap-fast.json']);
   for (const file of ['events/standings-preview.json','tools/overall-rank-history.json','tools/public-snapshot-client.mjs','tools/snapshot-metadata-recovery.mjs','tools/unique-profile-name.mjs','tools/overall-local-controller.mjs','tools/overall-local-projection.mjs','tools/practice-profile.mjs','events/client.mjs']) probes.add(file);
   for (const match of html.matchAll(/\b(?:src|href)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
@@ -418,7 +423,7 @@ export async function publishRelease({root=process.cwd(), branch=process.env.DEF
   if (!sha(commit)) throw Error('Invalid main commit');
   if (git(['rev-parse','HEAD']).trim() !== commit) throw Object.assign(Error('main moved since checkout; this publication job is superseded'),{code:'CDN_SOURCE_SUPERSEDED'});
   // Hash Git blobs, not checkout line endings or uncommitted working files.
-  const plan = await releasePlan({root,commit,now,read:async file=>Buffer.from(git(['show',commit + ':' + file],{encoding:null}))});
+  const plan = await releasePlan({root,commit,now,requireRankHistoryBinding:true,read:async file=>Buffer.from(git(['show',commit + ':' + file],{encoding:null}))});
   const listed = git(['ls-remote','--heads','origin','refs/heads/' + POINTER_BRANCH]).trim();
   let parent = null, previous = null;
   if (listed) {

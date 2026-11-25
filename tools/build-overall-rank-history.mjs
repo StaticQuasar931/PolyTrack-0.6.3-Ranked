@@ -98,7 +98,35 @@ export function advanceHistory(previous, observation, previousObservation) {
   return next;
 }
 
-export async function buildOverallRankHistory({root = ROOT, report, now = Date.now(), gitRead} = {}) {
+function restoreRankArtifact(base, previous, now) {
+  demand(base?.schemaVersion === 1 && base.directory === previous.directory && positive(base.observedAt) &&
+    base.observedAt <= now && positive(base.coverageStart) && base.coverageStart <= base.observedAt && positive(base.observations) &&
+    base.rows && typeof base.rows === 'object' && !Array.isArray(base.rows), 'Invalid baseline rank history');
+  const ranked = previous.board.entries.filter(row => row.provisional !== true);
+  demand(ranked.length === Object.keys(base.rows).length, 'Baseline ranked coverage mismatch');
+  const state = new Map();
+  for (const row of ranked) {
+    const id = row.accountId || row.userId, tuple = base.rows[id];
+    demand(Array.isArray(tuple) && tuple.length === 3 && tuple[0] === row.rank && positive(tuple[1]) &&
+      tuple[1] >= base.coverageStart && tuple[1] <= base.observedAt && positive(tuple[2]) && tuple[2] <= base.observations,
+    'Baseline rank history does not match its snapshot');
+    state.set(id, {rank: tuple[0], since: tuple[1], count: tuple[2], model: JSON.stringify([previous.model, row.seasonId ?? null])});
+  }
+  return state;
+}
+
+export function advancePublishedRankArtifact(base, previous, current) {
+  demand(current.directory !== previous.directory && positive(current.at) && current.at >= base?.observedAt,
+    'Expected a newer snapshot observation');
+  const state = restoreRankArtifact(base, previous, current.at);
+  const next = advanceHistory(state, current, {...previous, at: base.observedAt});
+  const rows = Object.fromEntries([...next].sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, value]) => [id, [value.rank, value.since, value.count]]));
+  return {schemaVersion: 1, directory: current.directory, observedAt: current.at, rows,
+    observations: base.observations + 1, coverageStart: base.coverageStart};
+}
+
+export async function buildOverallRankHistory({root = ROOT, report, now = Date.now(), gitRead, preferCommittedBaseline = false} = {}) {
   root = path.resolve(root);
   demand(positive(now), 'Invalid build timestamp');
   if (report) {
@@ -133,27 +161,22 @@ export async function buildOverallRankHistory({root = ROOT, report, now = Date.n
     observations++; coverageStart ??= observation.at; counts[observation.source]++;
   };
   const shallow = git(['rev-parse', '--is-shallow-repository']).toString().trim() === 'true';
-  if (shallow) {
-    const base = JSON.parse(show(head, 'tools/overall-rank-history.json'));
-    const headPointer = JSON.parse(show(head, 'snapshot-current.json'));
-    const baseline = await readOverall(name => show(head, name), headPointer.currentdir);
-    demand(base.schemaVersion === 1 && base.directory === headPointer.currentdir && positive(base.observedAt) &&
-      base.observedAt <= now && positive(base.coverageStart) && base.coverageStart <= base.observedAt &&
-      positive(base.observations) && base.rows && typeof base.rows === 'object' && !Array.isArray(base.rows),
-    'Shallow history needs a valid committed artifact paired with HEAD');
-    const ranked = baseline.board.entries.filter(row => row.provisional !== true);
-    demand(Object.keys(base.rows).length === ranked.length, 'Shallow base ranked coverage mismatch');
-    for (const row of ranked) {
-      const id = row.accountId || row.userId, tuple = base.rows[id];
-      demand(Array.isArray(tuple) && tuple.length === 3 && tuple[0] === row.rank && positive(tuple[1]) &&
-        tuple[1] >= base.coverageStart && tuple[1] <= base.observedAt && positive(tuple[2]) && tuple[2] <= base.observations,
-      'Shallow base rank or observation mismatch: ' + id);
-      state.set(id, {rank: tuple[0], since: tuple[1], count: tuple[2], model: JSON.stringify([baseline.model, row.seasonId ?? null])});
+  let reusedBaseline = false;
+  if (shallow || preferCommittedBaseline) {
+    try {
+      const base = JSON.parse(show(head, 'tools/overall-rank-history.json'));
+      const headPointer = JSON.parse(show(head, 'snapshot-current.json'));
+      const baseline = await readOverall(name => show(head, name), headPointer.currentdir);
+      state = restoreRankArtifact(base, baseline, now);
+      previous = final = {...baseline, at: base.observedAt, commit: head};
+      observations = base.observations; coverageStart = base.coverageStart; lastGitAt = base.observedAt;
+      reusedBaseline = true;
+    } catch (error) {
+      // A full clone can reconstruct older history when the committed seed is missing or stale.
+      if (shallow) throw error;
     }
-    previous = final = {...baseline, at: base.observedAt, commit: head};
-    observations = base.observations; coverageStart = base.coverageStart; lastGitAt = base.observedAt;
   }
-  for (const line of shallow ? [] : log) {
+  for (const line of reusedBaseline ? [] : log) {
     const [commit, seconds] = line.trim().split(/\s+/), at = Number(seconds) * 1000;
     if (positive(at)) lastGitAt = Math.max(lastGitAt, at);
     try {
@@ -188,7 +211,7 @@ export async function buildOverallRankHistory({root = ROOT, report, now = Date.n
   demand(bytes.length <= 1024 * 1024, 'History artifact exceeds static UI 1 MiB limit');
   const summary = {schemaVersion: 1, semantics: 'Consecutive observed rank, not exact tenure; raw rankSince ignored',
     head, directory: final.directory, latestObservedAt: final.at, observedAt: artifact.observedAt,
-    coverageStart, observations, attemptedGitObservations: shallow ? 0 : log.length, incrementalShallowBase: shallow, rows: state.size, bytes: bytes.length,
+    coverageStart, observations, attemptedGitObservations: reusedBaseline ? 0 : log.length, incrementalShallowBase: shallow, reusedCommittedBaseline: reusedBaseline, rows: state.size, bytes: bytes.length,
     recoveredRows: [...state.values()].filter(row => row.count > 1).length, counts, invalid, boundaries, modelChanges,
     top10: [...state].sort(([, a], [, b]) => a.rank - b.rank).slice(0, 10)
       .map(([accountId, row]) => ({accountId, rank: row.rank, since: row.since,
@@ -202,6 +225,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   demand(args.length === 0 || args.length === 2 && args[0] === '--report',
     'Usage: node tools/build-overall-rank-history.mjs [--report <private-path.json>]');
-  const summary = await buildOverallRankHistory({report: args[1]});
+  const summary = await buildOverallRankHistory({report: args[1], preferCommittedBaseline: args.length === 0});
   console.log(JSON.stringify(summary));
 }

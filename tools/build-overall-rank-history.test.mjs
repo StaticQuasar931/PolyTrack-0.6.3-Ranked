@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
-import {advanceHistory, readOverall, buildOverallRankHistory} from './build-overall-rank-history.mjs';
+import {advanceHistory, advancePublishedRankArtifact, readOverall, buildOverallRankHistory} from './build-overall-rank-history.mjs';
 
 const ID = 'a'.repeat(64), OTHER = 'b'.repeat(64), COMMIT = 'c'.repeat(40);
 const NOW = 1700001000000, OLD = NOW - 10000;
@@ -107,7 +107,7 @@ async function fixture(t, {shallow = false, broken = false} = {}) {
     return p;
   };
   await working();
-  return {root, source, working, run: () => buildOverallRankHistory({root, now: NOW, gitRead})};
+  return {root, source, working, run: options => buildOverallRankHistory({root, now: NOW, gitRead, ...options})};
 }
 
 test('working pointer appended with exact publication timestamp and bounded compact schema', async t => {
@@ -139,4 +139,26 @@ test('missing historical payload reported, corrupt current fails, invalid shallo
   const shallow = await fixture(t, {shallow: true}); shallow.source.delete('tools/overall-rank-history.json');
   await assert.rejects(shallow.run(), /Unavailable Git payload/);
   await assert.rejects(fs.access(path.join(shallow.root, 'tools/overall-rank-history.json')));
+});
+test('incremental artifact checks the baseline board and keeps existing tenure only at an unchanged rank',()=>{
+  const a=observation(1,OLD,{directory:'public-snapshots93'});
+  const base={schemaVersion:1,directory:a.directory,observedAt:OLD,coverageStart:OLD-100,observations:2,rows:{[ID]:[1,OLD-100,2]}};
+  const b=observation(1,NOW,{directory:'public-snapshots94'});
+  assert.deepEqual(advancePublishedRankArtifact(base,a,b).rows[ID],[1,OLD-100,3]);
+  assert.deepEqual(advancePublishedRankArtifact(base,a,{...b,board:{entries:[{userId:ID,rank:2}]}}).rows[ID],[2,NOW,1]);
+  assert.throws(()=>advancePublishedRankArtifact({...base,rows:{[ID]:[3,OLD,2]}},a,b),/does not match/);
+  assert.throws(()=>advancePublishedRankArtifact(base,a,a),/newer snapshot/);
+});
+
+test('routine incremental mode skips historical reads only with a matching committed baseline',async t=>{
+  const f=await fixture(t), options={preferCommittedBaseline:true};
+  let report=await f.run(options);
+  assert.equal(report.reusedCommittedBaseline,true);
+  assert.equal(report.attemptedGitObservations,0);
+  assert.equal(report.top10[0].count,8);
+  f.source.delete('tools/overall-rank-history.json');
+  report=await f.run(options);
+  assert.equal(report.reusedCommittedBaseline,false);
+  assert.equal(report.attemptedGitObservations,1);
+  assert.equal(report.top10[0].count,2);
 });

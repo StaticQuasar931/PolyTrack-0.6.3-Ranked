@@ -715,3 +715,8 @@ test('CDN compresses oversized full index bindings without changing offline sour
   assert.equal(plan.files.find(file=>file.path===key).sha256,hash(plan.compactIndex));
   assert.equal(f.files.get(key),large);
 });
+test('live deployment rejects rank history from a different snapshot',async()=>{
+  const f=fixture();await releasePlan({commit:sha,...f,requireRankHistoryBinding:true});
+  f.files.set('tools/overall-rank-history.json',Buffer.from(JSON.stringify({schemaVersion:1,directory:'public-snapshots2',rows:{}})));
+  await assert.rejects(releasePlan({commit:sha,...f,requireRankHistoryBinding:true}),/rank history paired with public-snapshots1/);
+});

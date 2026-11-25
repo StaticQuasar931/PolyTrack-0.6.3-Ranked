@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 491,
+    "number": 492,
     "version": "0.6.3",
-    "revision": 414,
+    "revision": 415,
     "notes": [
-      "Track Breakdown keeps all six sorting options in one row and aligns results on tablets and Chromebooks."
+      "Overall Rankings shows how long a racer has held their saved position again.",
+      "Top % keeps last-place finishes below other ranked results and shows shorter percentages."
     ]
   },
   "entries": [
+    {
+      "number": 491,
+      "title": "Align Track Breakdown on tablets",
+      "commit": "d6de1dcfacb4b14bc636d615dae3fc00b7c1ebbd",
+      "committedAt": "2026-11-25T22:39:00.000Z",
+      "notes": [
+        "Track Breakdown keeps all six sorting options in one row and aligns results on tablets and Chromebooks."
+      ]
+    },
     {
       "number": 490,
       "title": "Verify saved replays by track",
@@ -182,15 +192,6 @@
       "committedAt": "2026-11-22T22:30:33.000Z",
       "notes": [
         "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
-      ]
-    },
-    {
-      "number": 466,
-      "title": "Publish rankings while pending previews wait",
-      "commit": "5cd0a7e2f6a7d992d18e402d39d33706acf75acd",
-      "committedAt": "2026-11-22T22:10:08.000Z",
-      "notes": [
-        "New rankings can publish while unavailable replay previews wait for their own checks."
       ]
     }
   ],

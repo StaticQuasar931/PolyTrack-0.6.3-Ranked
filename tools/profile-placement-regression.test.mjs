@@ -145,3 +145,13 @@ test('long active playtime hover expresses the total in hours',()=>{
   assert.equal(format(5*86400000+27*60000),'120 h 27 min total');
   assert.equal(format(27000),'27 sec total');
 });
+test('Top % keeps last place and unknown results below comparable finishes in both directions',()=>{
+  const rows=[
+    {trackId:'last',rank:700,fieldSize:700},{trackId:'solo',rank:1,fieldSize:1},
+    {trackId:'unknown',rank:42},{trackId:'better',rank:16,fieldSize:4221},{trackId:'worse',rank:47,fieldSize:112}
+  ];
+  assert.deepEqual(makeSortHarness('percent',1)(rows).map(r=>r.trackId),['better','worse','last','solo','unknown']);
+  assert.deepEqual(makeSortHarness('percent',-1)(rows).map(r=>r.trackId),['worse','better','last','solo','unknown']);
+  const label=Function(functionSource('profileFinishPercentLabel')+';return profileFinishPercentLabel')();
+  assert.equal(label(16/4221),'0.38%');assert.equal(label(1),'100%');assert.equal(label(null),'');
+});
