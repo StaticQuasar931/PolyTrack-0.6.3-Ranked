@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 492,
+  "number": 495,
   "version": "0.6.3",
-  "revision": 415,
+  "revision": 416,
   "notes": [
-    "Overall Rankings shows how long a racer has held their saved position again.",
-    "Top % keeps last-place finishes below other ranked results and shows shorter percentages."
+    "The game reaches Play faster on startup and refresh.",
+    "The installed update notice no longer blocks the game.",
+    "GitHub Pages offers a save-safe Retry if a startup script fails. Google Sites may require reloading the page."
   ],
-  "preparedAt": "2026-11-25T22:52:05.521Z",
-  "committedAt": "2026-11-25T22:52:32.000Z"
+  "preparedAt": "2026-11-28T00:28:13.366Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

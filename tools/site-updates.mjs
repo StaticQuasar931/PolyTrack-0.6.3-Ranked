@@ -377,7 +377,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     return false;
   };
   let previousAcknowledgement;
-  let disposed = false, dialog = null, previousFocus = null, ageBinding = null, historyBinding = null;
+  let disposed = false, shown = false, dialog = null, ageBinding = null, historyBinding = null;
   const close = (restoreFocus = false) => {
     ageBinding?.dispose(); ageBinding = null;
     historyBinding?.dispose(); historyBinding = null;
@@ -385,7 +385,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     if (!node) return;
     try { node.close?.(); } catch { /* Removal is sufficient. */ }
     node.remove();
-    if (restoreFocus && previousFocus?.isConnected) { try { previousFocus.focus(); } catch { /* Best effort. */ } }
+
   };
   const acknowledge = () => {
     if (disposed || !dialog?.isConnected) return;
@@ -409,10 +409,11 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       safe = !!document.body && isVisible(document) && (loading || isReady(document) && isIdle(document));
     } catch { /* Defer. */ }
     if (!safe) { close(); return; }
-    if (dialog?.isConnected && dialog.open) { ageBinding?.refresh(); return; }
-    close();
-    const node = document.createElement('dialog');
-    dialog = node; previousFocus = document.activeElement;
+    if (dialog?.isConnected) { ageBinding?.refresh(); return; }
+    if (shown) return;
+    shown = true;
+    const node = document.createElement('aside');
+    dialog = node;
     if(manual)void requestSiteUpdateCheck(document);
     node.dataset.siteInstalledRevision = String(revision);
     if(manual)node.dataset.siteManualNotes='true';
@@ -442,6 +443,11 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       count.setAttribute('role','status');Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'});description.append(count);
     }
     themeDialog(node, title, description);
+    Object.assign(node.style,{position:'fixed',inset:'auto 12px 12px auto',zIndex:'7200',margin:'0',
+      width:'min(360px, calc(100% - 24px))',boxSizing:'border-box',padding:'10px 12px',maxHeight:'min(45vh, 300px)',
+      overflow:'auto',fontSize:'14px',pointerEvents:'auto'});
+    Object.assign(title.style,{fontSize:'18px',margin:'0 0 4px'});
+    title.setAttribute('role','status');
     const notes = document.createElement('ul');
     Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
     if(manual)for (const text of (Array.isArray(release.notes) ? release.notes : []).slice(0, 8).filter(text => typeof text === 'string' && text.slice(0, 1024).trim()).slice(0, 4)) {
@@ -455,57 +461,32 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     if (archive) historyBinding = bindReleaseHistory(archive);
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
-    const trapTab = event => {
-      const controls = node.querySelectorAll ? [...node.querySelectorAll('button, summary, a[href], [tabindex]')].filter(control =>
-        control.tabIndex !== -1 && (!control.getClientRects || control.getClientRects().length)) : [ok];
-      const first = controls[0] || ok, last = controls.at(-1) || ok;
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if ((!event.shiftKey && document.activeElement === last) || !controls.includes(document.activeElement)) { event.preventDefault(); first.focus(); }
-    };
-    node.__trapInstalledTab = trapTab;
+    ok.setAttribute('aria-label','Dismiss update notice');
     ok.addEventListener('click', acknowledge);
-    node.addEventListener('close', () => { if (dialog === node) close(); });
-    node.addEventListener('cancel', event => { event.preventDefault(); acknowledge(); });
-    node.addEventListener('keydown', event => {
-      event.stopPropagation();
-      if (event.key === 'Tab') trapTab(event);
-    });
-    if (archive) node.append(title, description, notes, archive, ok);
-    else if(manual)node.append(title,description,notes,ok);
-    else node.append(title,description,ok);
+    const details=document.createElement('details');
+    const label=document.createElement('summary');label.textContent='Update details';
+    details.append(label,description);
+    if(manual)details.append(notes);
+    if(archive)details.append(archive);
+    node.append(title,details,ok);
     document.body.append(node);
     try {
-      node.showModal(); ok.focus();
       if(manual)ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
         now, setTimeout: schedule, clearTimeout: unschedule});
     } catch { close(); }
-  };
-  // Stop game shortcuts, including the keyup following Escape/Enter dismissal.
-  const held = new Set();
-  const guard = event => {
-    const code = event.code || event.key;
-    if (dialog?.open || event.type === 'keyup' && held.has(code)) event.stopImmediatePropagation();
-    if (dialog?.open && event.type === 'keydown') {
-      held.add(code);
-      if (event.key === 'Tab') dialog.__trapInstalledTab?.(event);
-      if (event.key === 'Escape') historyBinding?.collapse(event);
-    }
-    if (event.type === 'keyup') held.delete(code);
   };
   const storageChanged = event => { if (event.key === key || event.key === snapshotKey || event.key === null) resume(); };
   document.addEventListener('visibilitychange', resume);
   for (const type of ['focus', 'pageshow']) view?.addEventListener(type, resume);
   const suspend = () => close();
   view?.addEventListener('pagehide', suspend);
-  for (const type of ['keydown', 'keyup']) view?.addEventListener(type, guard, true);
   view?.addEventListener('storage', storageChanged);
   const handle = Object.freeze({resume, dispose() {
     if (disposed) return;
-    disposed = true; close(); held.clear();
+    disposed = true; close();
     document.removeEventListener('visibilitychange', resume);
     for (const type of ['focus', 'pageshow']) view?.removeEventListener(type, resume);
     view?.removeEventListener('pagehide', suspend);
-    for (const type of ['keydown', 'keyup']) view?.removeEventListener(type, guard, true);
     view?.removeEventListener('storage', storageChanged);
     noticeInstallations.delete(document);
     initialNoticeReadiness.delete(document);
