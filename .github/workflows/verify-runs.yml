@@ -87,7 +87,10 @@ jobs:
         # Offline checks only; no service-account credential is exposed to tests.
         run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/overnight-kickoff.test.mjs tools/local-overnight-capture.test.mjs tools/local-capture-publication.test.mjs tools/local-capture-process.test.mjs tools/snapshot-daily-cost-plan.test.mjs tools/local-capture-git.test.mjs tools/local-capture-checkpoint.test.mjs tools/local-playback-cache.test.mjs tools/local-archive-replay-repair.test.mjs tools/local-capture-worker.test.mjs
       - name: Check trusted engine before Firebase reads
-        run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
+        run: |
+          git fetch --no-tags --depth=1 --filter=blob:none origin 8b51f8deb8f6c18235b32ec6986d769083eca7b7
+          node tools/verifier/materialize-reviewed-main.mjs --disposable-worktree "$GITHUB_WORKSPACE"
+          node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access
         # Snapshot-native runs do not enter the legacy queue; their capture job runs native contracts.
         if: steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore'

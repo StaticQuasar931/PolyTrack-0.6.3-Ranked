@@ -17,6 +17,7 @@ import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verificati
 
 const STATE = 'tools/workflow-capture-state.json';
 const FILE_LIMIT = 20 * 1024 * 1024;
+const decodedConsumerLimit = name => name === 'overall.json' ? 32 * 1024 * 1024 : FILE_LIMIT;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const timestamp = value => /^\d{13}$/.test(String(value)) ? Number(value) : NaN;
 const json = async (root, relative) => JSON.parse((await bytes(root, relative)).toString('utf8'));
@@ -174,7 +175,7 @@ async function validateConsumerPackage(root, directory, index, indexSha256) {
     const read = async relative => {
       const entry = snapshot.files.get(relative);
       if (!entry) throw Object.assign(Error('Missing capture file: ' + relative), {code: 'ENOENT'});
-      if (entry.decoded.length > FILE_LIMIT) throw Error('Invalid capture file: ' + relative);
+      if (entry.decoded.length > decodedConsumerLimit(relative)) throw Error('Invalid capture file: ' + relative);
       // Match disk hydration's fresh parse on every consumer access.
       return JSON.parse(entry.decoded.toString('utf8'));
     };
