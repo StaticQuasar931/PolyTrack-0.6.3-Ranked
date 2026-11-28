@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 496,
+    "number": 498,
     "version": "0.6.3",
-    "revision": 417,
+    "revision": 418,
     "notes": [
-      "Release notes appear centered on first launch while the game starts in the background.",
-      "Dismiss the notice once to skip it until the next release."
+      "Builder Program now opens in a centered popup and returns focus to More when dismissed.",
+      "Random and Quick Pick sit together, and Export My Picks is easier to spot.",
+      "Featured Picks show a compact track card with a square preview."
     ]
   },
   "entries": [
+    {
+      "number": 496,
+      "title": "Center the first-launch update notice",
+      "commit": "27a71624a058cc403d77dd76e8b345f7c5dce183",
+      "committedAt": "2026-11-28T00:49:26.000Z",
+      "notes": [
+        "Release notes appear centered on first launch while the game starts in the background.",
+        "Dismiss the notice once to skip it until the next release."
+      ]
+    },
     {
       "number": 495,
       "title": "Speed up game startup and add save-safe Retry",
@@ -187,15 +198,6 @@ const historyData = {
       "committedAt": "2026-11-22T23:43:34.000Z",
       "notes": [
         "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
-      ]
-    },
-    {
-      "number": 470,
-      "title": "Show new results in snapshot updates",
-      "commit": "ffa847fb09168dd377ea6d40f41538a77546686e",
-      "committedAt": "2026-11-22T23:13:39.000Z",
-      "notes": [
-        "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
       ]
     }
   ],
