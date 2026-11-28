@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 496,
+  "number": 498,
   "version": "0.6.3",
-  "revision": 417,
+  "revision": 418,
   "notes": [
-    "Release notes appear centered on first launch while the game starts in the background.",
-    "Dismiss the notice once to skip it until the next release."
+    "Builder Program now opens in a centered popup and returns focus to More when dismissed.",
+    "Random and Quick Pick sit together, and Export My Picks is easier to spot.",
+    "Featured Picks show a compact track card with a square preview."
   ],
-  "preparedAt": "2026-11-28T00:46:33.859Z"
+  "preparedAt": "2026-11-28T04:25:45.098Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -15,7 +15,7 @@ export function builderContactMailto() {
   return 'mailto:' + BUILDER_EMAIL + '?subject=' + encodeURIComponent('Builder program / track credit review') + '&body=' + encodeURIComponent(builderContactDraft());
 }
 
-export function mountBuilderContact({document, root, onBack, onDownload} = {}) {
+export function mountBuilderContact({document, root, onBack, onDownload, hideBack = false} = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false, pending = false;
   const make = (tag, className, value) => {
@@ -28,7 +28,8 @@ export function mountBuilderContact({document, root, onBack, onDownload} = {}) {
   back.addEventListener('click', () => {if (!destroyed) onBack?.();});
   const title = make('h3', '', 'Builder program');
   title.setAttribute('tabindex', '-1');
-  panel.append(back, title, make('p', 'sq-builder-intro', 'Share a track or request a credit review.'));
+  if (!hideBack) panel.append(back);
+  panel.append(title, make('p', 'sq-builder-intro', 'Share a track or request a credit review.'));
   panel.append(make('p', 'sq-builder-review-note', 'Credits and featuring are reviewed. Ports must credit original creators.'));
   const reviewHelp = make('details', 'sq-builder-review-help');
   reviewHelp.append(make('summary', '', 'How review works'), make('p', '', 'Original submissions, creator credits and contributor roles inform attribution. A contact request does not prove account ownership or guarantee featuring. This contact page sends no ratings or votes.'));

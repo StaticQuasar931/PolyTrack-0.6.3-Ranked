@@ -84,11 +84,11 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
           assert.equal(await visible.count(), 1, 'exactly the selected phone lane is visible');
           const bounds = await tile.evaluate(node => {
             const rect = node.getBoundingClientRect(), art = node.querySelector('figure').getBoundingClientRect();
-            return {left: rect.left, right: rect.right, height: rect.height, imageHeight: art.height,
+            return {left: rect.left, right: rect.right, height: rect.height, imageHeight: art.height, imageWidth: art.width,
               overflow: [...node.querySelectorAll('h4,p,button,time')].some(child => child.scrollWidth > child.clientWidth + 1)};
           });
           assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.height <= height, kind + ' selected card fits ' + width + 'x' + height);
-          assert.ok(bounds.imageHeight >= 96 && bounds.imageHeight <= 100, kind + ' has a compact contained phone preview');
+          assert.ok(bounds.imageHeight >= 56 && bounds.imageHeight <= 92 && Math.abs(bounds.imageWidth-bounds.imageHeight)<1, kind + ' has a compact square phone preview');
           assert.equal(bounds.overflow, false, kind + ' details do not overflow horizontally');
           assert.match(await tile.innerText(), /Created by/);
           await tile.locator('img').evaluateAll(nodes => Promise.all(nodes.map(image => image.decode().catch(() => {}))));
@@ -105,7 +105,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
         }));
         for (const card of cards) {
           assert.ok(card.left >= 0 && card.right <= width, 'all four desktop/tablet cards fit horizontally');
-          assert.ok(card.artWidth >= card.width - 4 && card.artHeight >= 112 && card.artHeight <= 116, 'desktop/tablet art is full-width, contained and compact');
+          assert.ok(card.artWidth < card.width / 2 && card.artHeight >= 56 && card.artHeight <= 92 && Math.abs(card.artWidth-card.artHeight)<1, 'desktop/tablet art is a compact square');
         }
         if (height <= 700) await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
       }
@@ -201,7 +201,7 @@ test('an open menu rolls locally across UTC day and week without rerendering rev
 });
 
 
-test('Builder contact stays local until a user chooses a link, fits phones and preserves search on Back and Escape', {skip: !chromium}, async () => {
+test('Builder contact stays local until a user chooses a link, fits phones and preserves search on Close and Escape', {skip: !chromium}, async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage();
@@ -223,12 +223,18 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     await page.evaluate(()=>document.fonts.ready);
     assert.equal(moduleRequests.includes('builder-contact.mjs'),false,'contact code is not loaded before user action');
     const search=page.getByRole('searchbox',{name:'Search tracks'});await search.fill('Everlasting');
-    const initialDialogs=await page.getByRole('dialog').count();
     if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
-    await page.locator('.sq-extra-builder-submenu > summary').click();
+    await page.locator('.sq-extra-builder-action').click();
     const contact=page.locator('.sq-builder-contact');await contact.waitFor({state:'visible'});
     assert.equal(moduleRequests.filter(name=>name==='builder-contact.mjs').length,1);
-    assert.equal(await page.getByRole('dialog').count(),initialDialogs,'contact uses the existing dialog');
+    const popup=page.getByRole('dialog',{name:'Builder program',exact:true});
+    assert.equal(await popup.count(),1);
+    assert.equal(await page.locator('.sq-extra-menu').evaluate(node=>node.inert),true);
+    await popup.getByRole('button',{name:'Close',exact:true}).focus();
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.getByRole('button',{name:'Download message checklist'}).evaluate(node=>node===document.activeElement),true);
+    await page.keyboard.press('Tab');
+    assert.equal(await popup.getByRole('button',{name:'Close',exact:true}).evaluate(node=>node===document.activeElement),true);
     assert.equal(await page.getByRole('link',{name:'Contact on Discord',exact:true}).getAttribute('href'),'https://discord.gg/jW2az4AQUH');
     const email=new URL(await page.getByRole('link',{name:/^Email backup:/}).getAttribute('href'));
     assert.equal(email.protocol,'mailto:');assert.equal(email.pathname,'StaticQuasar931Games@gmail.com');
@@ -240,17 +246,21 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
       const bounds=await contact.evaluate(node=>({right:node.getBoundingClientRect().right,width:node.getBoundingClientRect().width,overflow:node.scrollWidth>node.clientWidth+1,font:getComputedStyle(node).fontFamily}));
       assert.ok(bounds.right<=width+1&&bounds.width<=width&& !bounds.overflow,'contact fits '+width+'x'+height);
       assert.match(bounds.font,/ForcedSquare/);
+      const panel=await popup.locator('.sq-extra-builder-panel').boundingBox();
+      assert.ok(Math.abs(panel.x+panel.width/2-width/2)<=2 && Math.abs(panel.y+panel.height/2-height/2)<=2,'dialog remains centered');
       if(process.env.EXTRA_TRACKS_SCREENSHOT_DIR)await page.screenshot({path:process.env.EXTRA_TRACKS_SCREENSHOT_DIR+'/builder-contact-'+width+'x'+height+'.png'});
     }
     const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download message checklist',exact:true}).click()]);
     assert.equal(download.suggestedFilename(),'polytrack-builder-contact-checklist.txt');
     assert.match(fs.readFileSync(await download.path(),'utf8'),/Permissions and original credits/);
-    await page.getByRole('button',{name:'Back to tracks',exact:true}).click();
+    await popup.getByRole('button',{name:'Close',exact:true}).click();
+    assert.equal(await page.locator('.sq-extra-builder-action').evaluate(node=>node===document.activeElement),true);
     assert.equal(await search.inputValue(),'Everlasting');assert.equal(await page.locator('.sq-extra-card').count(),1);
     if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
-    await page.locator('.sq-extra-builder-submenu > summary').click();await contact.waitFor({state:'visible'});
+    await page.locator('.sq-extra-builder-action').click();await contact.waitFor({state:'visible'});
     await page.keyboard.press('Escape');assert.equal(await contact.isHidden(),true);assert.equal(await search.inputValue(),'Everlasting');
     assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true);
+    assert.equal(await page.locator('.sq-extra-builder-action').evaluate(node=>node===document.activeElement),true);
     assert.deepEqual(unexpected,[],'no contact, Firebase or other external fetch is made');assert.deepEqual(errors,[]);
     await page.evaluate(()=>window.catalog.destroy());
   } finally {await browser.close();}

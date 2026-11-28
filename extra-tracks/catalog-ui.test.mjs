@@ -1577,29 +1577,31 @@ test('spotlights use real preview images and creator credit, mobile tabs, and a 
 });
 
 
-test('Builder program is a nested More submenu, preserves track filters, and Escape returns to More actions', async () => {
+test('Builder program opens a nested modal from More, preserves track filters, and Escape returns to More actions', async () => {
   const {document,root,api}=fixture([entry(1),entry(2)]);api.open();
   const search=tag(cls(root,'sq-extra-search-field')[0],'input')[0];search.value='Track 02';await search.dispatch('input');
   cls(root,'sq-extra-header-more')[0].open=true;
-  const builder=cls(root,'sq-extra-builder-action')[0];const dialogs=walk(root).filter(n=>n.getAttribute('role')==='dialog').length;
-  await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);
-  assert.equal(cls(root,'sq-extra-builder-submenu')[0].contains(cls(root,'sq-extra-contact-host')[0]),true);
-  assert.equal(walk(root).filter(n=>n.getAttribute('role')==='dialog').length,dialogs,'no second contact modal');
+  const builder=cls(root,'sq-extra-builder-action')[0], popup=cls(root,'sq-extra-builder-modal')[0];
+  await click(builder);assert.equal(popup.hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);
+  assert.equal(popup.contains(cls(root,'sq-extra-contact-host')[0]),true);
+  assert.equal(cls(root,'sq-extra-menu')[0].inert,true);
+  assert.equal(popup.getAttribute('aria-modal'),'true');
   document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('hidden pagination must not change');}});
   api.setSnapshotStatistics({generation:1,statistics:{schemaVersion:1,tracks:{}}});
   document.listeners.get('keydown')({key:'Escape',preventDefault(){}});
-  assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(search.value,'Track 02');
+  assert.equal(popup.hidden,true);assert.equal(search.value,'Track 02');
+  assert.equal(cls(root,'sq-extra-menu')[0].inert,false);
   assert.equal(cls(root,'sq-extra-card').length,1);assert.equal(tag(cls(root,'sq-extra-card')[0],'h3')[0].textContent,'Track 02');
-  assert.equal(document.activeElement,builder);api.destroy();
+  assert.ok(document.activeElement===builder);api.destroy();
 });
 
-test('closing Builder program restores the track view on reopen and Back preserves chosen sort', async () => {
+test('closing Builder program restores the track view on reopen and Close preserves chosen sort', async () => {
   const {root,api}=fixture([entry(1),entry(2)]);api.open();
   const sort=tag(field(root,'Sort'),'select')[0];sort.value='name';await sort.dispatch('change');
   cls(root,'sq-extra-header-more')[0].open=true;
-  await click(cls(root,'sq-extra-builder-action')[0]);await click(cls(root,'sq-builder-back')[0]);assert.equal(sort.value,'name');
+  await click(cls(root,'sq-extra-builder-action')[0]);await click(cls(cls(root,'sq-extra-builder-modal')[0],'sq-extra-builder-close')[0]);assert.equal(sort.value,'name');
   await click(cls(root,'sq-extra-builder-action')[0]);api.close();api.open();
-  assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);assert.equal(sort.value,'name');api.destroy();
+  assert.equal(cls(root,'sq-extra-builder-modal')[0].hidden,true);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);assert.equal(sort.value,'name');api.destroy();
 });
 
 
@@ -1612,19 +1614,18 @@ test('short landscape toolbar uses one bounded row and short portrait retains op
   assert.match(css, /@media\(max-height:700px\)/);
 });
 
-test('discovery cards use full-width uncropped art, native square styling and responsive lanes without compact overrides', () => {
+test('discovery cards use uncropped square thumbnails beside track info and retain responsive lanes', () => {
   const css = fs.readFileSync(new URL('catalog.css', import.meta.url), 'utf8');
   const discovery = css.split('/* Image-led discovery stays separate')[1];
   assert.match(discovery, /\.sq-extra-featured\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(discovery, /\.sq-extra-featured>\.sq-extra-pick\{[^}]*grid-template-columns:minmax\(0,1fr\);grid-template-rows:auto 1fr/);
   assert.match(discovery, /border-radius:0/);
   assert.match(discovery, /border-top:4px solid var\(--spotlight-accent\)/);
-  assert.match(discovery, /\.sq-extra-pick-art\{[^}]*min-height:112px/);
-  assert.match(discovery, /\.sq-extra-pick-art img\{[^}]*height:94px;object-fit:contain/);
+  assert.match(discovery, /\.sq-extra-pick-art\{[^}]*aspect-ratio:1/);
+  assert.match(discovery, /\.sq-extra-pick-art img\{[^}]*height:100%;max-height:100%;object-fit:contain/);
   assert.match(discovery, /@media\(min-width:601px\) and \(max-width:1100px\)\{\.sq-extra-featured\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(discovery, /@media\(max-width:600px\)\{\s*\.sq-extra-featured\{grid-template-columns:minmax\(0,1fr\)/);
   assert.match(discovery, /\.sq-extra-featured-tab\{[^}]*min-height:44px/);
-  assert.match(discovery, /\.sq-extra-pick-art\{min-height:96px/);
   assert.match(discovery, /data-mobile-active="false"\]\{display:none/);
   assert.doesNotMatch(discovery, /grid-template-columns:(?:64|80|88|100)px/);
   assert.doesNotMatch(discovery, /\.sq-extra-pick-period\{display:none/);
@@ -1765,20 +1766,21 @@ test('picker preview bridge is single-flight and exposes a cancellation guard fo
  assert.equal(context.isCurrent(),false);
 });
 
-test('closing and reopening the Builder submenu during lazy import never leaves it empty or steals focus after close', async () => {
+test('closing and reopening the Builder popup during lazy import never leaves it empty or steals focus after close', async () => {
  const {document,root,api}=fixture([entry(1)]);api.open();
  const contribute=cls(root,'sq-extra-header-more')[0],builder=cls(root,'sq-extra-builder-action')[0];
  contribute.open=true;
- const first=click(builder);assert.equal(builder.getAttribute('aria-expanded'),'true');
- await click(builder);assert.equal(builder.getAttribute('aria-expanded'),'false');
+ const popup=cls(root,'sq-extra-builder-modal')[0],close=cls(popup,'sq-extra-builder-close')[0];
+ const first=click(builder);assert.equal(popup.hidden,false);
+ await click(close);assert.equal(popup.hidden,true);
  const reopened=click(builder);await Promise.all([first,reopened]);
- assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);
+ assert.equal(popup.hidden,false);
  assert.equal(cls(root,'sq-builder-contact').length,1);
- await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
+ await click(close);assert.equal(popup.hidden,true);
  const pending=click(builder);api.close();await pending;
- assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
+ assert.equal(popup.hidden,true);
  assert.equal(cls(root,'sq-extra-overlay')[0].hidden,true);
- assert.notEqual(document.activeElement,tag(cls(root,'sq-builder-contact')[0],'h3')[0]);
+ assert.ok(document.activeElement!==tag(cls(root,'sq-builder-contact')[0],'h3')[0]);
  api.destroy();
 });
 
@@ -1787,9 +1789,11 @@ test('dismissing contribution from a track click preserves the existing card tar
  const contribute=cls(root,'sq-extra-header-more')[0];contribute.open=true;
  document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('menu keys must not page the catalog');}});
  await click(cls(root,'sq-extra-builder-action')[0]);
- const card=cls(root,'sq-extra-card')[0];
+ const popup=cls(root,'sq-extra-builder-modal')[0],card=cls(root,'sq-extra-card')[0];
  document.listeners.get('click')({target:card});
- assert.equal(contribute.open,false);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
- assert.equal(cls(root,'sq-extra-card')[0],card,'outside dismissal must not replace the clicked card');
+ assert.equal(popup.hidden,false);assert.equal(contribute.open,true);
+ await click(popup);assert.equal(popup.hidden,true);
+ document.listeners.get('click')({target:card});assert.equal(contribute.open,false);
+ assert.ok(cls(root,'sq-extra-card')[0]===card,'outside dismissal must not replace the clicked card');
  api.destroy();
 });

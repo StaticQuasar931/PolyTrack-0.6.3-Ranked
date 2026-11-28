@@ -112,7 +112,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
-  let buildersView = false;
   let contactGeneration = 0;
   let contactApi = null;
   let activeSpotlight = 'daily';
@@ -213,23 +212,24 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     syncSendControls();
     submitName.focus();
   });
-  const builderProgram = make('details', 'sq-extra-builder-submenu');
-  const buildersButton = make('summary', 'sq-extra-builder-action', 'Builder program');
-  buildersButton.setAttribute('aria-expanded', 'false');
-  buildersButton.addEventListener('click', async event => {
-    event.preventDefault();
-    if (builderProgram.open) showTrackView();
-    else { builderProgram.open = true; buildersButton.setAttribute('aria-expanded', 'true'); await openBuilderContact(); }
-  });
-  const contactHost = make('section', 'sq-extra-contact-host');
-  contactHost.id = 'sq-extra-contact-' + mountNumber; contactHost.hidden = true;
-  buildersButton.setAttribute('aria-controls', contactHost.id);
-  builderProgram.append(buildersButton, contactHost);
-  headerMoreActions.append(submit, builderProgram);
+  const buildersButton = button('Builder program', 'sq-extra-builder-action', openBuilderContact);
+  const builderModal = make('div', 'sq-extra-builder-modal');
+  builderModal.id = 'sq-extra-contact-' + mountNumber;
+  builderModal.hidden = true;
+  builderModal.setAttribute('role', 'dialog');
+  builderModal.setAttribute('aria-modal', 'true');
+  builderModal.setAttribute('aria-label', 'Builder program');
+  buildersButton.setAttribute('aria-haspopup', 'dialog');
+  buildersButton.setAttribute('aria-controls', builderModal.id);
+  const builderPanel = make('section', 'sq-extra-builder-panel');
+  const builderClose = button('Close', 'sq-extra-builder-close', () => closeBuilderContact());
+  const contactHost = make('div', 'sq-extra-contact-host');
+  builderPanel.append(builderClose, contactHost);
+  builderModal.append(builderPanel);
+  builderModal.addEventListener('click', event => { if (event.target === builderModal) closeBuilderContact(); });
+  overlay.append(builderModal);
+  headerMoreActions.append(submit, buildersButton);
   if (exportButton) headerMoreActions.append(exportButton);
-  headerMore.addEventListener('toggle', () => {
-    if (!headerMore.open && (buildersView || builderProgram.open)) showTrackView(false);
-  });
   header.append(headerMore, closeButton);
   const gradingHelp = make('details', 'sq-extra-grading-help');
   gradingHelp.append(make('summary', '', 'About ratings & difficulty'));
@@ -417,7 +417,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     pickerPrefs = readPickerPrefs(pickerStorage(), pickerPrefs);
     for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
     headerMore.open = false;
-    if (buildersView || builderProgram.open) showTrackView(false);
     clearCardMenu();
     pickerReturnFocus = document.activeElement;
     pickerModal.hidden = false;
@@ -1135,37 +1134,41 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   async function openBuilderContact() {
-    if (destroyed || !opened) return;
+    if (destroyed || !opened || !builderModal.hidden) return;
     const generation = ++contactGeneration;
-    buildersButton.setAttribute('aria-busy', 'true');
+    clearCardMenu();
+    builderModal.hidden = false;
+    syncDialogModality();
+    builderClose.focus();
+    if (contactApi) { contactApi.focus(); return; }
+    contactHost.replaceChildren(make('p', '', 'Opening Builder Program...'));
+    contactHost.setAttribute('aria-busy', 'true');
     try {
-      const {mountBuilderContact} = await import(new URL(`builder-contact.mjs${new URL(import.meta.url).search}`, import.meta.url));
-      if (destroyed || !opened || generation !== contactGeneration || !builderProgram.open || !headerMore.open) return;
-      if (!contactApi) { contactHost.replaceChildren(); contactApi = mountBuilderContact({document, root: contactHost, onBack: () => showTrackView()}); }
-      clearCardMenu(); stopFeaturedTimer();
-      buildersView = true;
-      contactHost.hidden = false;
-      buildersButton.setAttribute('aria-expanded', 'true');
-      contactApi.focus();
+      const {mountBuilderContact} = await import(new URL('builder-contact.mjs' + new URL(import.meta.url).search, import.meta.url));
+      if (destroyed || !opened || generation !== contactGeneration) return;
+      contactHost.replaceChildren();
+      contactApi = mountBuilderContact({document, root: contactHost, hideBack: true});
+      if (document.activeElement === builderClose) contactApi.focus();
     } catch {
       if (!destroyed && opened && generation === contactGeneration) {
-        contactHost.hidden = false;
-        contactHost.textContent = 'Builder program could not open. Close this submenu and try again.';
+        const status = make('p', '', 'Builder Program could not open. Close it and try again.');
+        status.setAttribute('role', 'status');
+        contactHost.replaceChildren(status);
       }
-    } finally {if (generation === contactGeneration) buildersButton.removeAttribute('aria-busy');}
+    } finally {if (generation === contactGeneration) contactHost.removeAttribute('aria-busy');}
   }
 
-  function showTrackView(restoreFocus = true, refresh = true) {
+  function closeBuilderContact(restoreFocus = true) {
+    if (builderModal.hidden) return;
     contactGeneration++;
-    buildersView = false; contactHost.hidden = true; builderProgram.open = false;
-    buildersButton.removeAttribute('aria-busy');
-    buildersButton.setAttribute('aria-expanded', 'false');
-    if (!destroyed && opened && refresh) {renderFeatured();scheduleFeaturedRefresh();}
-    if (restoreFocus) { headerMore.open = true; buildersButton.focus({preventScroll: true}); }
+    contactHost.removeAttribute('aria-busy');
+    builderModal.hidden = true;
+    syncDialogModality();
+    if (restoreFocus) (headerMore.open ? buildersButton : headerMoreSummary).focus({preventScroll: true});
   }
 
   function renderFeatured(all = currentEntries()) {
-    if (destroyed || buildersView) return;
+    if (destroyed) return;
     const focusedKind = [...featured.children].find(tile => tile.getAttribute('data-pick-kind') && tile.contains(document.activeElement))?.getAttribute('data-pick-kind');
     const focusedTab = document.activeElement?.getAttribute?.('data-pick-tab');
     const focusedToggle = document.activeElement?.className?.split(' ').includes('sq-extra-featured-toggle');
@@ -1228,10 +1231,11 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.kind === 'critics' ? (pick.quality === null ? 'EDITORIAL LINE' : 'HIGHLY RATED') : pick.kind === 'roulette' ? 'ROUTE ROULETTE' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
       const heading = make('div', 'sq-extra-pick-heading');
       heading.append(make('span', 'sq-extra-pick-label', label));
-      content.append(heading);
-      const name = make('h4', 'sq-extra-pick-name', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
+      const identity = make('div', 'sq-extra-pick-identity');
+      identity.append(heading);
+      const name = make('h4', 'sq-extra-pick-name', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; identity.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
-      author.title = author.textContent; content.append(author);
+      author.title = author.textContent; identity.append(author);
       const reason = pick.kind === 'daily' ? (pick.pool === 'curated' ? 'Daily editorial catalog selection.' : 'Daily pick from published ratings.')
         : pick.kind === 'weekly' ? (pick.underplayed ? 'Lowest known racer-count quarter.' : 'Weekly editorial selection.')
         : pick.kind === 'critics' ? (pick.quality === null ? 'Editorial selection; rating unknown.' : 'Selected for its published rating.')
@@ -1259,9 +1263,9 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
       heading.append(period);
       highlight.append(metrics);
-      footer.append(play, progressLabel); content.append(highlight, footer);
+      footer.append(play, progressLabel); content.append(identity, artwork, highlight, footer);
       if (focusedKind === pick.kind) focusTarget = play;
-      tile.append(artwork, content); tiles.push(tile);
+      tile.append(content); tiles.push(tile);
     }
     featured.append(note, toggle, tabs, ...tiles); activate(picks.some(pick => pick.kind === activeSpotlight) ? activeSpotlight : picks[0].kind);
     focusTarget?.focus({preventScroll: true});
@@ -1276,7 +1280,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   function scheduleFeaturedRefresh() {
     stopFeaturedTimer();
     const view = document.defaultView;
-    if (!opened || destroyed || buildersView || document.hidden || typeof view?.setTimeout !== 'function') return;
+    if (!opened || destroyed || document.hidden || typeof view?.setTimeout !== 'function') return;
     const timestamp = now();
     if (!Number.isFinite(timestamp)) return;
     const generation = featuredTimerGeneration;
@@ -1298,7 +1302,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function render() {
-    if (destroyed || buildersView) return;
+    if (destroyed) return;
     const all = currentEntries();
     syncSortChoices(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
@@ -1598,8 +1602,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   function close() {
     headerMore.open = false;
     if (!opened || destroyed) return;
-    contactGeneration++;
-    if (buildersView || builderProgram.open) showTrackView(false, false);
+    closeBuilderContact(false);
     opened = false;
     pickerGeneration++;
     closePicker(false);
@@ -1615,7 +1618,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function syncDialogModality() {
-    const nestedModalOpen = !pickerModal.hidden || !submissionModal.hidden || !reportModal.hidden;
+    const nestedModalOpen = !builderModal.hidden || !pickerModal.hidden || !submissionModal.hidden || !reportModal.hidden;
     dialog.inert = nestedModalOpen;
     dialog.setAttribute('aria-modal', String(!nestedModalOpen));
   }
@@ -1662,7 +1665,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       else if (expandedCardMenu) clearCardMenu(true);
       else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
-      else if (buildersView || builderProgram.open) showTrackView();
+      else if (!builderModal.hidden) closeBuilderContact();
       else if (headerMore.open) { headerMore.open = false; headerMoreSummary.focus(); }
       else close();
       return;
@@ -1688,7 +1691,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       // The review popup is outside dialog; let native Tab move within it.
       return;
     }
-    if ((buildersView || headerMore.open || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
+    if ((!builderModal.hidden || headerMore.open || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     const activeRating = document.activeElement?.getAttribute?.('data-quick-rating') === 'true';
@@ -1717,7 +1720,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       }
     }
     if (event.key !== 'Tab') return;
-    const focusRoot = !pickerModal.hidden ? pickerModal : !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : dialog;
+    const focusRoot = !pickerModal.hidden ? pickerModal : !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : !builderModal.hidden ? builderModal : dialog;
     const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href],summary')].filter(node => {
       for (let current = node; current; current = current.parentElement || current.parent) {
         if (current.hidden) return false;
@@ -1802,10 +1805,9 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function onCardMenuOutside(event) {
-    if (opened && pickerModal.hidden && submissionModal.hidden && reportModal.hidden) {
+    if (opened && pickerModal.hidden && submissionModal.hidden && reportModal.hidden && builderModal.hidden) {
       if (headerMore.open && !headerMore.contains(event.target)) {
         headerMore.open = false;
-        if (buildersView || builderProgram.open) showTrackView(false);
       }
     }
     const path = event.composedPath?.() || [];

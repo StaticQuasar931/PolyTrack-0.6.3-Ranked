@@ -880,22 +880,27 @@ test('featured picks, visible random actions and a single More disclosure fit de
    const visible=page.locator('.sq-extra-pick:visible').first();
    if(await visible.count()){
     assert.equal(await visible.locator('.sq-extra-pick-reason').count(),1);
+    const layout=await visible.evaluate(tile=>Object.fromEntries(['identity','art','highlight'].map(key=>[key,tile.querySelector('.sq-extra-pick-'+key).getBoundingClientRect().toJSON()])));
+    assert.ok(layout.identity.right<layout.art.left && Math.abs(layout.art.width-layout.art.height)<1);
+    assert.ok(layout.highlight.top>=layout.art.bottom);
     assert.equal(await visible.locator('.sq-extra-pick-highlight .sq-extra-pick-note').count(),1);
     assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el,'::after').content),'none');
     assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el).backgroundImage),'none');
    }
    assert.equal(await page.locator('.sq-extra-random-actions').evaluate(el=>el.parentElement.className),'sq-extra-controls');
    assert.equal(await page.getByRole('button',{name:'Choose random track',exact:true}).textContent(),'Random');
+   const parts=await page.locator('.sq-extra-random-actions button').evaluateAll(buttons=>buttons.map(button=>button.getBoundingClientRect().toJSON()));
+   assert.equal(parts.length,2);assert.equal(parts[0].y,parts[1].y);assert.ok(Math.abs(parts[0].right-parts[1].left)<=1);
    await shot('contribute-catalog-'+width+'x'+height);
    assert.equal(await page.locator('.sq-extra-header > details').count(),1);
    await more.focus();await page.keyboard.press('Enter');
-   assert.deepEqual(await page.locator('.sq-extra-header-actions > button, .sq-extra-builder-submenu > summary').allTextContents(),['Submit a track','Builder program','Export my picks']);
+   assert.deepEqual(await page.locator('.sq-extra-header-actions > button').allTextContents(),['Submit a track','Builder program','Export my picks']);
    await shot('contribute-menu-'+width+'x'+height);
-   const builder=page.locator('.sq-extra-builder-submenu > summary');
+   const builder=page.locator('.sq-extra-builder-action');
    await builder.focus();await page.keyboard.press('Enter');
-   const contact=page.locator('.sq-extra-builder-submenu .sq-builder-contact');await contact.waitFor({state:'visible'});
-   assert.equal(await contact.locator('.sq-builder-checklist li').count(),5,'actual program guidance is inside the submenu');
-   const menu=page.locator('.sq-extra-header-actions');
+   const contact=page.locator('.sq-extra-builder-modal .sq-builder-contact');await contact.waitFor({state:'visible'});
+   assert.equal(await contact.locator('.sq-builder-checklist li').count(),5,'actual program guidance is inside the dialog');
+   const menu=page.locator('.sq-extra-builder-panel');
    const menuBounds=await menu.boundingBox();assert.ok(menuBounds.x>=0&&menuBounds.y>=0&&menuBounds.x+menuBounds.width<=width&&menuBounds.y+menuBounds.height<=height);
    await shot('contribute-builder-'+width+'x'+height);
    await contact.locator('.sq-builder-contact-actions').scrollIntoViewIfNeeded();
@@ -910,6 +915,8 @@ test('featured picks, visible random actions and a single More disclosure fit de
    await page.keyboard.press('Escape');
    await more.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.sq-extra-export').isVisible(),true);
    await shot('contribute-more-'+width+'x'+height);
+   const green=await page.locator('.sq-extra-export').evaluate(el=>getComputedStyle(el).backgroundColor.match(/\d+/g).map(Number));
+   assert.ok(green[1]>green[0] && green[1]>green[2]);
    await page.locator('.sq-extra-export').click();
    await page.keyboard.press('Escape');assert.equal(await more.evaluate(el=>el===document.activeElement),true);
    assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true,'Escape dismisses only More');
