@@ -1,13 +1,11 @@
 const releaseInfo = {
-  "number": 498,
+  "number": 503,
   "version": "0.6.3",
-  "revision": 418,
+  "revision": 420,
   "notes": [
-    "Builder Program now opens in a centered popup and returns focus to More when dismissed.",
-    "Random and Quick Pick sit together, and Export My Picks is easier to spot.",
-    "Featured Picks show a compact track card with a square preview."
+    "Ranked replay verification uses its reviewed engine, independently of the game renderer. The live standings are unchanged."
   ],
-  "preparedAt": "2026-11-28T04:25:45.098Z"
+  "preparedAt": "2026-11-28T09:17:54.337Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
