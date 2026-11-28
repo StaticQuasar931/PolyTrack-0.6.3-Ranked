@@ -79,7 +79,7 @@
   const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=418',eventsModuleUrl).href)
     .then(installNativePartialReplayFallback).catch(error=>{console.warn('Native partial replay controls unavailable',error);return null;});
   let helpControlsModule=null,releaseInfoModule=null,installedRevisionNotice=null,siteUpdateHandle=null,siteUpdateMenuState=null;
-  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=418',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=418',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=418',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
+  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=418',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=419',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=418',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
       siteUpdateMenuState=menuState;releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
@@ -2451,7 +2451,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(!localInsights){
         const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=418');
         localInsights=module.createLocalInsights({storage,revision:418});
-        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=418').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:418,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
+        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=419').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:419,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
         void import('./tools/control-usage.mjs?v=418').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
       const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=418');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
@@ -12997,8 +12997,8 @@ return {normalizeRankedNotifications,rankedNotificationRetryDelay};})();
     install();
     void Promise.all([import('./tools/native-track-search.mjs?v=418'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=418',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=418',eventsModuleUrl).href)]).then(([module,release])=>{
-      siteUpdateHandle=module.installSiteUpdates({revision:418,document,
+    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=418',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=419',eventsModuleUrl).href)]).then(([module,release])=>{
+      siteUpdateHandle=module.installSiteUpdates({revision:419,document,
         onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false&&onlineServicePageAllowed();},
         isIdle:canOfferSiteUpdate,
         canReload:canOfferSiteUpdate,endpoint:module.CANONICAL_SITE_VERSION_URL});
