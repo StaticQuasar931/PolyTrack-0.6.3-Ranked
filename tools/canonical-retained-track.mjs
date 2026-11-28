@@ -24,6 +24,14 @@ function playable(row) {
     !(typeof row.reason === 'string' && /review|hold|excluded|unscored|rejected|mismatch/i.test(row.reason));
 }
 
+// Integrity-only published rows are eligible for exact canonical retention, not for proof or RP.
+function pendingPublished(row) {
+  return playable(row) && row.runVerified === false && row.verified === false &&
+    row.integrityVerified === true && row.verifiedState === 0 && row.verificationStatus === 'pending' &&
+    row.playbackPending === true && row.playbackVerified !== true &&
+    row.nativeLedgerKey == null && row.nativeLedgerManifestHash == null;
+}
+
 function validateBoard(board, trackId) {
   demand(board?.trackId === trackId && Array.isArray(board.entries) && board.entries.length <= 10000 &&
     board.complete === true && board.sourceComplete !== false && board.totalEntriesExact !== false &&
@@ -55,8 +63,13 @@ export function createCanonicalRetainedTrack({readCanonical, readCanonicalBatch,
     const missing = prior.entries.filter(row => !accounts.has(row.accountId));
     demand(board.entries.length + missing.length <= 10000, 'combined board limit');
     demand(missing.length <= maxDocuments - used - reserved, 'document budget exceeded (needed '+missing.length+', left '+(maxDocuments-used-reserved)+')');
+    const pending = new Set();
     for (const row of missing) {
       canonicalBindingSignature(row);
+      if (pendingPublished(row)) {
+        pending.add(row.accountId);
+        continue;
+      }
       demand(playable(row) && row.runVerified === true && typeof row.nativeLedgerKey === 'string' &&
         HASH.test(row.nativeLedgerKey) && proofAllowed(structuredClone(row)) === true, 'missing native proof or held prior row');
     }
@@ -88,7 +101,7 @@ export function createCanonicalRetainedTrack({readCanonical, readCanonicalBatch,
             const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
             if(source.timeMs!==row.timeMs)fields.push('time');
             if(fields.includes('account') || fields.includes('track')) throw Error('Canonical retained track: canonical document identity mismatch');
-            if (!quarantineChanged) throw new CanonicalRunChangedError(trackId,fields);
+            if (!quarantineChanged || pending.has(row.accountId)) throw new CanonicalRunChangedError(trackId,fields);
             quarantined.push(row.accountId);
             continue;
           }
@@ -97,7 +110,9 @@ export function createCanonicalRetainedTrack({readCanonical, readCanonicalBatch,
             createHash('sha256').update(source.replay).digest('hex') === row.replayHash, 'replay SHA256 mismatch');
           const replay = await validatePublicReplayForPublication(source.replay, row.frames ?? row.raceTimeFrames);
           demand(replay.indexedPlaybackWithinBudget === true, 'replay indexed playback budget exceeded');
-          demand(confirmProof(structuredClone(row),structuredClone(source)) === true, 'current native proof or policy did not match');
+          if (!pending.has(row.accountId)) {
+            demand(confirmProof(structuredClone(row),structuredClone(source)) === true, 'current native proof or policy did not match');
+          }
           retained.push({accountId: row.accountId, trackId, uploadId: row.uploadId, replayHash: row.replayHash,
             canonicalUpdateTime: doc.updateTime || null});
         }
