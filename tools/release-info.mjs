@@ -1,11 +1,11 @@
 const releaseInfo = {
-  "number": 502,
+  "number": 503,
   "version": "0.6.3",
-  "revision": 419,
+  "revision": 420,
   "notes": [
-    "Maintenance update for ranked snapshot publishing and replay verification."
+    "Ranked replay verification uses its reviewed engine, independently of the game renderer. The live standings are unchanged."
   ],
-  "preparedAt": "2026-11-28T09:14:02.945Z"
+  "preparedAt": "2026-11-28T09:17:54.337Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

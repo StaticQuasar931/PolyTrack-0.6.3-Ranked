@@ -1,16 +1,55 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 498,
+    "number": 503,
     "version": "0.6.3",
-    "revision": 418,
+    "revision": 420,
     "notes": [
-      "Builder Program now opens in a centered popup and returns focus to More when dismissed.",
-      "Random and Quick Pick sit together, and Export My Picks is easier to spot.",
-      "Featured Picks show a compact track card with a square preview."
+      "Ranked replay verification uses its reviewed engine, independently of the game renderer. The live standings are unchanged."
     ]
   },
   "entries": [
+    {
+      "number": 502,
+      "title": "Ranked snapshot workflow repairs",
+      "commit": "8ed13f524021274a83e2bf726610e90be0df82ad",
+      "committedAt": "2026-11-28T09:14:30.000Z",
+      "notes": [
+        "Maintenance update for ranked snapshot publishing and replay verification."
+      ]
+    },
+    {
+      "number": null,
+      "title": "Keep regression coverage for pending canonical retention",
+      "commit": "be6cfb6348f15abc727d7cf5bb8fbf9cc58479ee",
+      "committedAt": "2026-11-28T09:09:18.000Z",
+      "notes": []
+    },
+    {
+      "number": null,
+      "title": "Keep exact canonical pending results without granting proof",
+      "commit": "189896b88aef8f7899e7a04b8cef3883f5e4ce8c",
+      "committedAt": "2026-11-28T09:06:08.000Z",
+      "notes": []
+    },
+    {
+      "number": null,
+      "title": "Pin the offline engine independently of the released renderer",
+      "commit": "e5810811112fbfceee412f620bf7354f5f052087",
+      "committedAt": "2026-11-28T08:49:42.000Z",
+      "notes": []
+    },
+    {
+      "number": 498,
+      "title": "Polish Extra Tracks browsing",
+      "commit": "599b0056f841e3f0b5004a2d78e6d7b1c98e4b4b",
+      "committedAt": "2026-11-28T05:46:25.000Z",
+      "notes": [
+        "Builder Program now opens in a centered popup and returns focus to More when dismissed.",
+        "Random and Quick Pick sit together, and Export My Picks is easier to spot.",
+        "Featured Picks show a compact track card with a square preview."
+      ]
+    },
     {
       "number": 496,
       "title": "Center the first-launch update notice",
@@ -152,51 +191,6 @@
       "committedAt": "2026-11-23T00:53:15.000Z",
       "notes": [
         "Achievements now show 44 tiers, including new rewards for Ranked Extra finishes, personal bests, and verified wins. The Style Shop has eight new items, and live previews have more room."
-      ]
-    },
-    {
-      "number": 477,
-      "title": "Fix archived names and track freshness",
-      "commit": "49ed11cecc8218da7e6700b641abd7e51a3314a6",
-      "committedAt": "2026-11-23T00:45:30.000Z",
-      "notes": [
-        "Past Events now use the latest available racer names, and track boards show the age of their own standings. The Center sticker sits farther forward, and the update button is easier to spot."
-      ]
-    },
-    {
-      "number": 475,
-      "title": "Restore the latest past weekly event",
-      "commit": "22113ec1b545dea539b7a72c8fb92123c0b8bcf1",
-      "committedAt": "2026-11-23T00:23:36.000Z",
-      "notes": [
-        "Uplink Error is back in the Past Events list, in the right order. Saved standings are shown without labeling them final."
-      ]
-    },
-    {
-      "number": 473,
-      "title": "Keep event results when name filters change",
-      "commit": "606c79a50b0bf8a48a05bea0cd13577a90b49cd5",
-      "committedAt": "2026-11-22T23:53:21.000Z",
-      "notes": [
-        "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
-      ]
-    },
-    {
-      "number": 472,
-      "title": "Group Beat the Owner under Style",
-      "commit": "3048b7d8df99e0cf7e318fa420e6835cfaeafd04",
-      "committedAt": "2026-11-22T23:49:03.000Z",
-      "notes": [
-        "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
-      ]
-    },
-    {
-      "number": 471,
-      "title": "Clarify snapshot updates and Workshop placement",
-      "commit": "af594bb425c00cc081ade831bb225c6a04298a2d",
-      "committedAt": "2026-11-22T23:43:34.000Z",
-      "notes": [
-        "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
       ]
     }
   ],
