@@ -378,14 +378,13 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   };
   let previousAcknowledgement;
   let disposed = false, shown = false, dialog = null, ageBinding = null, historyBinding = null;
-  const close = (restoreFocus = false) => {
+  const close = () => {
     ageBinding?.dispose(); ageBinding = null;
     historyBinding?.dispose(); historyBinding = null;
     const node = dialog; dialog = null;
     if (!node) return;
     try { node.close?.(); } catch { /* Removal is sufficient. */ }
     node.remove();
-
   };
   const acknowledge = () => {
     if (disposed || !dialog?.isConnected) return;
@@ -396,10 +395,15 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       for(const id of ids)try{store.setItem(id,'acknowledged');}catch{}
       if(manual&&validRevision(release.number))try{store.setItem(LAST_RELEASE_ACK_KEY,JSON.stringify({number:release.number,commit:/^[a-f0-9]{40}$/.test(release.commit||'')?release.commit:null}));}catch{}
     }
-    close(true);
+    close();
   };
   const resume = () => {
     if (disposed) return;
+    // Menu changes and a cached-page restore must not dismiss an open release.
+    if (dialog?.isConnected && dialog.dataset.siteManualNotes === 'true') {
+      ageBinding?.refresh();
+      return;
+    }
     const manual=!acknowledged(), snapshot=!!snapshotKey&&!acknowledged(snapshotKey);
     if(!manual&&!snapshot){close();return;}
     let safe = false;
@@ -416,7 +420,10 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     dialog = node;
     if(manual)void requestSiteUpdateCheck(document);
     node.dataset.siteInstalledRevision = String(revision);
-    if(manual)node.dataset.siteManualNotes='true';
+    if (manual) {
+      node.dataset.siteManualNotes = 'true';
+      node.setAttribute('role', 'dialog');
+    }
     if(manual&&validRevision(release.number))node.dataset.siteInstalledRelease=String(release.number);
     if(snapshot)node.dataset.siteInstalledSnapshot=String(generation);
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
@@ -443,10 +450,15 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       count.setAttribute('role','status');Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'});description.append(count);
     }
     themeDialog(node, title, description);
-    Object.assign(node.style,{position:'fixed',inset:'auto 12px 12px auto',zIndex:'7200',margin:'0',
-      width:'min(360px, calc(100% - 24px))',boxSizing:'border-box',padding:'10px 12px',maxHeight:'min(45vh, 300px)',
-      overflow:'auto',fontSize:'14px',pointerEvents:'auto'});
-    Object.assign(title.style,{fontSize:'18px',margin:'0 0 4px'});
+    if (manual) {
+      Object.assign(node.style, {position:'fixed', inset:'50% auto auto 50%', transform:'translate(-50%, -50%)',
+        zIndex:'7200', margin:'0'});
+    } else {
+      Object.assign(node.style,{position:'fixed',inset:'auto 12px 12px auto',zIndex:'7200',margin:'0',
+        width:'min(360px, calc(100% - 24px))',boxSizing:'border-box',padding:'10px 12px',maxHeight:'min(45vh, 300px)',
+        overflow:'auto',fontSize:'14px',pointerEvents:'auto'});
+      Object.assign(title.style,{fontSize:'18px',margin:'0 0 4px'});
+    }
     title.setAttribute('role','status');
     const notes = document.createElement('ul');
     Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
@@ -463,22 +475,27 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
     ok.setAttribute('aria-label','Dismiss update notice');
     ok.addEventListener('click', acknowledge);
-    const details=document.createElement('details');
-    const label=document.createElement('summary');label.textContent='Update details';
-    details.append(label,description);
-    if(manual)details.append(notes);
-    if(archive)details.append(archive);
-    node.append(title,details,ok);
+    if (manual) {
+      node.append(title, description, notes);
+      if (archive) node.append(archive);
+      node.append(ok);
+    } else {
+      const details = document.createElement('details');
+      const label = document.createElement('summary');
+      label.textContent = 'Update details';
+      details.append(label, description);
+      node.append(title, details, ok);
+    }
     document.body.append(node);
     try {
       if(manual)ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
         now, setTimeout: schedule, clearTimeout: unschedule});
-    } catch { close(); }
+    } catch { /* Optional release age must not dismiss the notice. */ }
   };
   const storageChanged = event => { if (event.key === key || event.key === snapshotKey || event.key === null) resume(); };
   document.addEventListener('visibilitychange', resume);
   for (const type of ['focus', 'pageshow']) view?.addEventListener(type, resume);
-  const suspend = () => close();
+  const suspend = () => { if (dialog?.dataset.siteManualNotes !== 'true') close(); };
   view?.addEventListener('pagehide', suspend);
   view?.addEventListener('storage', storageChanged);
   const handle = Object.freeze({resume, dispose() {

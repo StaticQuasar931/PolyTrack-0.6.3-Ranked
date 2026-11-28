@@ -1,16 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 495,
+    "number": 496,
     "version": "0.6.3",
-    "revision": 416,
+    "revision": 417,
     "notes": [
-      "The game reaches Play faster on startup and refresh.",
-      "The installed update notice no longer blocks the game.",
-      "GitHub Pages offers a save-safe Retry if a startup script fails. Google Sites may require reloading the page."
+      "Release notes appear centered on first launch while the game starts in the background.",
+      "Dismiss the notice once to skip it until the next release."
     ]
   },
   "entries": [
+    {
+      "number": 495,
+      "title": "Speed up game startup and add save-safe Retry",
+      "commit": "253815215438f4c5abd9d18e0507b7e9a9656f2e",
+      "committedAt": "2026-11-28T00:34:00.000Z",
+      "notes": [
+        "The game reaches Play faster on startup and refresh.",
+        "The installed update notice no longer blocks the game.",
+        "GitHub Pages offers a save-safe Retry if a startup script fails. Google Sites may require reloading the page."
+      ]
+    },
     {
       "number": 492,
       "title": "Restore time at rank",
@@ -185,15 +195,6 @@
       "committedAt": "2026-11-22T23:13:39.000Z",
       "notes": [
         "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
-      ]
-    },
-    {
-      "number": 469,
-      "title": "Announce new ranking snapshots in game",
-      "commit": "318b85f721a635cfe51154702750dc30fe57b6d7",
-      "committedAt": "2026-11-22T22:59:14.000Z",
-      "notes": [
-        "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
       ]
     }
   ],

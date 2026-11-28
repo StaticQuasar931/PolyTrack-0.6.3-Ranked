@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 495,
+  "number": 496,
   "version": "0.6.3",
-  "revision": 416,
+  "revision": 417,
   "notes": [
-    "The game reaches Play faster on startup and refresh.",
-    "The installed update notice no longer blocks the game.",
-    "GitHub Pages offers a save-safe Retry if a startup script fails. Google Sites may require reloading the page."
+    "Release notes appear centered on first launch while the game starts in the background.",
+    "Dismiss the notice once to skip it until the next release."
   ],
-  "preparedAt": "2026-11-28T00:28:13.366Z"
+  "preparedAt": "2026-11-28T00:46:33.859Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
