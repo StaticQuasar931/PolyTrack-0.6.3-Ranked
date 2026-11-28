@@ -291,3 +291,33 @@ test('manual canonical batches remain bounded, counted and order-bound', async (
   await assert.rejects(f.run(),/document budget/);
   assert.deepEqual(calls,[32,32,1]);
 });
+
+function pendingFixture() {
+  const f = fixture({proofAllowed: () => assert.fail('Pending rows cannot claim a proof')});
+  const row = f.prior.entries[0];
+  Object.assign(row, {runVerified: false, verified: false, verifiedState: 0,
+    integrityVerified: true, verificationStatus: 'pending', playbackPending: true});
+  delete row.nativeLedgerKey;
+  delete row.nativeLedgerManifestHash;
+  return f;
+}
+
+test('exact canonical pending row stays pending without a native proof', async () => {
+  const f = pendingFixture();
+  const result = await f.run();
+  const row = result.board.entries.find(r => r.accountId === accountId);
+  assert.deepEqual(row, rankTrustedTrackEntries([current, f.prior.entries[0]], trackId)[1]);
+  assert.equal(row.runVerified, false);
+  assert.equal(row.playbackPending, true);
+  assert.equal(row.nativeLedgerKey, undefined);
+  assert.deepEqual(f.calls, [[accountId, trackId]]);
+});
+
+for (const [field,value] of [['timeMs', 999], ['replayHash', 'f'.repeat(64)], ['held', true]]) {
+  test('pending retention fails closed on changed canonical ' + field, async () => {
+    const f = pendingFixture();
+    f.doc.data[field] = value;
+    await assert.rejects(f.run());
+    assert.deepEqual(f.helper.report().retained, []);
+  });
+}
