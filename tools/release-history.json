@@ -1,15 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 492,
+    "number": 495,
     "version": "0.6.3",
-    "revision": 415,
+    "revision": 416,
     "notes": [
-      "Overall Rankings shows how long a racer has held their saved position again.",
-      "Top % keeps last-place finishes below other ranked results and shows shorter percentages."
+      "The game reaches Play faster on startup and refresh.",
+      "The installed update notice no longer blocks the game.",
+      "GitHub Pages offers a save-safe Retry if a startup script fails. Google Sites may require reloading the page."
     ]
   },
   "entries": [
+    {
+      "number": 492,
+      "title": "Restore time at rank",
+      "commit": "8b51f8deb8f6c18235b32ec6986d769083eca7b7",
+      "committedAt": "2026-11-25T22:52:32.000Z",
+      "notes": [
+        "Overall Rankings shows how long a racer has held their saved position again.",
+        "Top % keeps last-place finishes below other ranked results and shows shorter percentages."
+      ]
+    },
     {
       "number": 491,
       "title": "Align Track Breakdown on tablets",
@@ -183,15 +194,6 @@
       "committedAt": "2026-11-22T22:59:14.000Z",
       "notes": [
         "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
-      ]
-    },
-    {
-      "number": 467,
-      "title": "Restore published replays before ranking updates",
-      "commit": "5a4700961193e431744d768436713e5b25deca31",
-      "committedAt": "2026-11-22T22:30:33.000Z",
-      "notes": [
-        "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
       ]
     }
   ],

@@ -34,16 +34,16 @@
     <link rel="preload" href="./forced_square.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="./images/logo.svg" as="image" type="image/svg+xml">
     <link rel="preload" href="./images/discord.svg" as="image" type="image/svg+xml">
-    <link rel="stylesheet" href="./events/events.css?v=415" data-event-css>
-    <link rel="stylesheet" href="./home-ui.css?v=415" data-home-ui-css>
-    <link rel="stylesheet" href="./tools/achievement-journal.css?v=415" data-profile-achievements-css>
-    <link rel="stylesheet" href="./tools/racer-studio-polish.css?v=415" data-studio-polish-css>
-    <link rel="stylesheet" href="./responsive-ui.css?v=415" data-responsive-ui-css>
-    <link rel="stylesheet" href="./practice-responsive.css?v=415" data-practice-ui-css>
-    <script type="module" src="./tools/responsive-ui.mjs?v=415"></script>
-    <link rel="stylesheet" href="./help-controls.css?v=415">
+    <link rel="stylesheet" href="./events/events.css?v=416" data-event-css>
+    <link rel="stylesheet" href="./home-ui.css?v=416" data-home-ui-css>
+    <link rel="stylesheet" href="./tools/achievement-journal.css?v=416" data-profile-achievements-css>
+    <link rel="stylesheet" href="./tools/racer-studio-polish.css?v=416" data-studio-polish-css>
+    <link rel="stylesheet" href="./responsive-ui.css?v=416" data-responsive-ui-css>
+    <link rel="stylesheet" href="./practice-responsive.css?v=416" data-practice-ui-css>
+    <script type="module" src="./tools/responsive-ui.mjs?v=416"></script>
+    <link rel="stylesheet" href="./help-controls.css?v=416">
     <link rel="modulepreload" href="./tools/help-controls.mjs">
-    <link rel="modulepreload" href="./events/client.mjs?v=415">
+    <link rel="modulepreload" href="./events/client.mjs?v=416">
     <link rel="modulepreload" href="./events/kodub-weekly.mjs">
     <link rel="manifest" href="./manifest.json">
     <script>
@@ -89,6 +89,12 @@
       }
       html, body{ margin:0; height:100%; background:#000; color:#eaf4ff; font-family:ForcedSquare,system-ui,sans-serif; }
       body{ overflow:hidden; }
+      #ptStartupFailure{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:8100;
+        max-width:min(420px,calc(100% - 32px));box-sizing:border-box;padding:12px 16px;
+        border-left:3px solid #ffc963;background:#172440;color:#f5f8ff;font:15px/1.45 system-ui,sans-serif}
+      #ptStartupFailure p{margin:0}
+      #ptStartupFailure button{min-height:44px;color:#fff;background:none;border:0;font:inherit;text-decoration:underline;text-underline-offset:.25em;cursor:pointer}
+      #ptStartupFailure button:focus-visible{outline:2px solid #ffc963;outline-offset:3px}
 
       #staticMenu{
         position:fixed; left:12px; top:12px; z-index:9999;
@@ -127,20 +133,34 @@
       window.POLYTRACK_TURN_BROKER_URL='https://polytrack-turn-broker.staticquasar931.workers.dev/turn';
       window.POLYTRACK_DIRECT_PUBLIC_READS=false;
       window.POLYTRACK_RANKED_BROKER_URL='https://polytrack-ranked-worker.staticquasar931.workers.dev';
+      window.addEventListener('error',function startupScriptFailed(event){
+        if(!event.target?.matches?.('script[data-pt-boot-critical]'))return;
+        function showFailure(){
+          const notice=document.getElementById('ptStartupFailure');
+          notice.hidden=false;
+          notice.querySelector('[role="alert"]').textContent='The game could not load. Retrying will not clear your saves.';
+        }
+        if(document.getElementById('ptStartupFailure'))showFailure();
+        else document.addEventListener('DOMContentLoaded',showFailure,{once:true});
+      },true);
     </script>
     <script defer="defer" src="./error_screen.bundle.js"></script>
-    <script defer="defer" src="./public-name-policy.js?v=415"></script>
-    <script defer="defer" src="./polytrack_062_patch.js?v=415"></script>
-    <script defer="defer" src="./main.bundle.js?v=415"></script>
+    <script defer="defer" data-pt-boot-critical src="./public-name-policy.js?v=416"></script>
+    <script defer="defer" data-pt-boot-critical src="./polytrack_062_patch.js?v=416"></script>
+    <script defer="defer" data-pt-boot-critical src="./main.bundle.js?v=416"></script>
   </head>
 
   <body>
+    <aside id="ptStartupFailure" aria-label="Startup failure" hidden>
+      <p role="alert"></p>
+      <button type="button" onclick="window.__polytrackExitGuard?.allowReload();location.reload()">Retry startup</button>
+    </aside>
     <canvas id="screen"></canvas>
     <div id="ui"></div>
     <div id="transition-layer"></div>
-    <script type="module" async src="./tools/early-update-notice.mjs?v=415"></script>
+    <script type="module" async src="./tools/early-update-notice.mjs?v=416"></script>
 
-    <script type="module" src="./tools/exit-guard.mjs?v=415"></script>
+    <script type="module" src="./tools/exit-guard.mjs?v=416"></script>
     <div id="staticMenu" role="region" aria-label="StaticQuasar menu">
       <a href="https://sites.google.com/view/staticquasar931/gm3z" target="_blank" rel="noopener">STATIC / GAMES</a>
     </div>
